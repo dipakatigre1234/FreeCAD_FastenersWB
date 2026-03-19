@@ -303,6 +303,7 @@ screwTables = {
     "ASMEB18.2.1.1": ("Screw", "makeSquareBolt"),
     "ASMEB18.2.1.6": ("Screw", "makeHexHeadBolt"),
     "ASMEB18.2.1.8": ("Screw", "makeHexHeadWithFlange"),
+    "ASMEB18.2.1.9": ("Screw", "makeLobeHeadScrew"),
     "ASMEB18.2.2.1A": ("Nut", "makeHexNut"),
     "ASMEB18.2.2.1B": ("Nut", "makeSquareNut"),
     "ASMEB18.2.2.2": ("Nut", "makeSquareNut"),

@@ -33,6 +33,43 @@ if _wb_root not in _sys.path:
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
+# ── Compatibility shim ────────────────────────────────────────────────────────
+# Guard against older FSThreadingASME that may not export bolt_nominal.
+# This lets FastenersCmd load safely even if FSThreadingASME was not updated.
+if not hasattr(_TA, "bolt_nominal"):
+    def _bolt_nominal_shim(diam_str):
+        s = str(diam_str or "").strip().replace('"', "in")
+        if not s or s == "Auto":
+            return ""
+        return s.rstrip("in").rstrip()
+    _TA.bolt_nominal = _bolt_nominal_shim
+
+if not hasattr(_TA, "valid_thread2types_for_dia"):
+    _TA.valid_thread2types_for_dia = lambda nominal: ["UNC", "UN", "UNR"]
+
+if not hasattr(_TA, "tpi_enum_options"):
+    _TA.tpi_enum_options = lambda nominal, tt: ["Custom"]
+
+if not hasattr(_TA, "valid_classes_for_series_tpi"):
+    _TA.valid_classes_for_series_tpi = lambda nom, ser, tpi: ["2A", "3A"]
+
+if not hasattr(_TA, "all_classes_for_nominal"):
+    _TA.all_classes_for_nominal = lambda nominal: ["2A", "3A"]
+
+if not hasattr(_TA, "outer_dia_mm"):
+    _TA.outer_dia_mm = lambda *a, **kw: None
+
+if not hasattr(_TA, "get_shank_dia"):
+    _TA.get_shank_dia = lambda fa, fallback: fallback
+
+if not hasattr(_TA, "resolve_thread_params"):
+    _TA.resolve_thread_params = lambda nom, fa: {
+        "tpi": 0, "series": "UNC", "cls": "2A",
+        "P_mm": 1.27, "is_unr": False, "thread_type": "UNC"}
+
+if not hasattr(_TA, "_interpolated_deviation_pct"):
+    _TA._interpolated_deviation_pct = lambda dia_mm: 0.0
+
 translate = FreeCAD.Qt.translate
 screwMaker = ScrewMaker.Instance
 

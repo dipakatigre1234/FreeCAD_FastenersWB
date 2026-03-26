@@ -1,182 +1,452 @@
 # -*- coding: utf-8 -*-
 """
-FsMakeHexHeadBolt.py
-====================
-HEAD geometry    : from fa.dimTable (asmeb18 / ISO / DIN CSV) — never deviated
-SHANK + TIP dia  : from threading module get_shank_dia() — deviated d_eff
-THREADING        : delegated to FSThreadingASME / FSThreadingMetric
+FSThreadingASME.py — ASME UN/UNR thread cutting module
+=======================================================
+Responsibilities:
+  1. Load un_unr_limits_of_size.csv (ASME B1.1 Thread Outer Dia)
+  2. Table query helpers for FastenersCmd dashboard dropdowns
+  3. Cut ASME UN/UNR threads into a FreeCAD shape
+
+NOT responsible for: b_tbl, r, thread length, bolt length.
+Those are computed by the calling FsMake file.
+
+Public API
+----------
+  outer_dia_mm(nominal, series, tpi, cls)        -> float mm  (raw CSV, no deviation)
+  bolt_nominal(diam_str)                          -> str
+  valid_thread2types_for_dia(nominal)             -> list
+  tpi_enum_options(nominal, thread_type)          -> list
+  valid_classes_for_series_tpi(nominal, s, tpi)   -> list
+  all_classes_for_nominal(nominal)                -> list
+  resolve_thread_params(nominal, fa)              -> dict
+  thread_dia_limits_asme(...)                     -> dict
+  get_shank_dia(fa, dia_fallback)                -> float mm  ← SINGLE SOURCE of d_eff
+  cut_thread(shape, fa, dia, tl, offset_z, P_mm) -> shape
 """
-from screw_maker import *
 
-import sys as _sys_t, os as _os_t
-_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
-if _wb_t not in _sys_t.path:
-    _sys_t.path.insert(0, _wb_t)
-import FSThreadingASME   as _TA
-import FSThreadingMetric as _TM
+import os as _os, math as _math, functools as _functools
+_sqrt3 = _math.sqrt(3.0)
+
+_CSV_DIR  = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "FsData")
+_CSV_ASME = _os.path.join(_CSV_DIR, "un_unr_limits_of_size.csv")
+
+# ── Diameter deviation (percentage, diameter-dependent) ──────────────────────
+#
+# A percentage of Thread_Outer_Dia (from un_unr_limits_of_size.csv) is
+# SUBTRACTED to get d_eff — the effective diameter used for:
+#   — bolt shank + tip profile  (body making in every FsMake file)
+#   — thread cutter OD          (cut_thread helix cutter)
+#
+#   deviation_mm  =  Thread_Outer_Dia  ×  pct / 100
+#   d_eff         =  Thread_Outer_Dia  −  deviation_mm
+#
+# Small diameters  → DEVIATION_PCT_SMALL  (larger subtraction)
+# Large diameters  → DEVIATION_PCT_LARGE  (smaller subtraction)
+# In between       → linearly interpolated automatically
+#
+# Example with defaults:
+#   1/4 in  ( 6.35 mm)  → 2.000 % subtracted
+#   5/8 in  (15.88 mm)  → 1.834 % subtracted  (interpolated)
+#   1   in  (25.40 mm)  → 1.724 % subtracted  (interpolated)
+#   2   in  (50.80 mm)  → 1.552 % subtracted  (interpolated)
+#   2.5 in  (63.50 mm)  → 1.500 % subtracted
+#
+# ↓↓ Change only these two values — dia bounds are read from the CSV ↓↓
+DEVIATION_PCT_SMALL  = 2.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_LARGE  = 1.5    # % subtracted at the largest  dia in un_unr_limits_of_size.csv
 
 
-def makeHexHeadBolt(self, fa):
-    """Creates a bolt with a hexagonal head.
+def _asme_dia_bounds_mm():
+    """Return (min_mm, max_mm) by reading all nominal diameters from the CSV.
 
-    Supported types:
-    - DIN 933 / DIN 961 / ISO 4014 / 4016 / 4017 / 4018
-    - ISO 8676 / 8765 / ASMEB18.2.1.6 / ASMEB18.2.1.7
-
-    HEAD dimensions  : fa.dimTable  (asmeb18 / ISO / DIN CSV) — not deviated
-    SHANK + TIP dia  : _TA.get_shank_dia() or _TM.get_shank_dia() → d_eff
-    Thread cutter OD : same d_eff — cut_thread() receives d_eff not nominal
+    Called once at first use — result cached in _ASME_DIA_MIN_MM / _ASME_DIA_MAX_MM.
+    Converts each Dia string ('1/4', '1-1/4', '2' …) to mm and takes min/max.
+    Falls back to (6.0, 64.0) if the CSV cannot be read.
     """
-    dia     = self.getDia(fa.calc_diam, False)
-    length  = fa.calc_len
-    is_asme = fa.baseType.startswith("ASME")
-
-    # ── 1. Unpack dimTable ────────────────────────────────────────────────
-    if fa.baseType in ("DIN933", "DIN961", "ISO4017", "ISO8676"):
-        P_tbl, c, dw, e, k, r, s = fa.dimTable
-        b_tbl = length
-
-    elif fa.baseType == "ISO4018":
-        P_tbl, _, _, c, _, dw, e, k, _, _, _, r, s, _ = fa.dimTable
-        b_tbl = length
-
-    elif fa.baseType == "ISO4014":
-        P_tbl, b1, b2, b3, c, dw, e, k, r, s = fa.dimTable
-        b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
-
-    elif fa.baseType == "ISO4016":
-        P_tbl, b1, b2, b3, c, _, _, _, dw, e, k, _, _, _, r, s, _ = fa.dimTable
-        b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
-
-    elif fa.baseType == "ISO8765":
-        P_tbl, b1, b2, b3, c = fa.dimTable[:5]
-        dw = fa.dimTable[11]
-        e  = fa.dimTable[13]
-        k  = fa.dimTable[15]
-        r  = fa.dimTable[22]
-        s  = fa.dimTable[23]
-        b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
-
-    elif fa.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3"):
-        if len(fa.dimTable) == 9:
-            b1_tbl, b2_tbl, P_tbl, c, _dw_unused, e, k, r, s = fa.dimTable
-        else:
-            b1_tbl, b2_tbl, P_tbl, c, e, k, r, s = fa.dimTable
-        b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
-        dw    = None
-
-    elif fa.baseType == "ASMEB18.2.1.6":
-        b_tbl, P_tbl, c, _dw6, e, k, r, s = fa.dimTable
-        dw = None
-        if length > 6 * 25.4:
-            b_tbl += 6.35
-
-    elif fa.baseType == "ASMEB18.2.1.7":
-        b1_tbl, b2_tbl, P_tbl, c, _dw7, e, k, r, s = fa.dimTable
-        dw    = None
-        b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
-
-    else:
-        raise NotImplementedError(f"Unknown fastener type: {fa.Type}")
-
-    # ── 2. Resolve effective pitch P ─────────────────────────────────────
-    raw_pitch = getattr(fa, "calc_pitch", None)
-    P = float(raw_pitch) if (raw_pitch is not None and float(raw_pitch) > 0.0) \
-        else P_tbl
-
-    # ── 3. Thread length ──────────────────────────────────────────────────
-    raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
-    if raw_tlen > 0.0:
-        b = min(float(raw_tlen), length)
-    else:
-        b = b_tbl
-
-    # ── 4. d_eff — single call to threading module ────────────────────────
-    #
-    #  Threading module does:
-    #    CSV lookup → raw Thread_Outer_Dia (ASME) or Thread_Mean_Dia (Metric)
-    #    _interpolated_deviation_pct(dia) → pct
-    #    d_eff = CSV_dia − (CSV_dia × pct / 100)
-    #
-    #  This is the ONLY place d_eff is computed.
-    #  Both shank profile and cut_thread use this same value.
-    #  To change deviation: edit the 4 constants at top of the threading module.
-    #
-    if is_asme:
-        d_eff = _TA.get_shank_dia(fa, dia)
-    else:
-        d_eff = _TM.get_shank_dia(fa, dia)
-
-    tr = d_eff / 2.0
-
-    # ── 5. Console log ────────────────────────────────────────────────────
+    import csv, io
+    mm_vals = []
     try:
-        import FreeCAD as _FC
-        _tpi_log = round(25.4 / P) if P > 0 else 0
-        _custom  = " (custom)" if (raw_pitch and float(raw_pitch) > 0) else ""
-        _cls_log = str(getattr(fa, "Thread_Class", "-") or "-") if is_asme \
-                   else str(getattr(fa, "Thread_Class_ISO", "-") or "-")
-        _pitch_s = str(getattr(fa, "Thread_Pitch", "") or "") if not is_asme else ""
-        _FC.Console.PrintMessage(
-            "[Thread] Type        : " + str(fa.baseType) + "\n" +
-            "[Thread] Nominal D   : " + f"{dia:.4f} mm\n" +
-            "[Thread] d_eff       : " + f"{d_eff:.5f} mm  (threading module CSV + deviation)\n" +
-            "[Thread] Pitch P     : " + f"{P:.5f} mm" + _custom + "\n" +
-            "[Thread] TPI         : " + str(_tpi_log) + _custom + "\n" +
-            ("[Thread] Class       : " + _cls_log + "\n" if is_asme else
-             "[Thread] MetricPitch : " + _pitch_s + "  Class: " + _cls_log + "\n") +
-            "[Thread] Shank r     : " + f"{tr:.5f} mm\n" +
-            "[Thread] Thread Len  : " + f"{b:.3f} mm\n" +
-            "[Thread] Total Len   : " + f"{length:.3f} mm\n"
-        )
+        with open(_CSV_ASME, newline="", encoding="utf-8") as f:
+            content = f.read()
+        lines = content.splitlines()
+        reader = csv.DictReader(io.StringIO("\n".join(lines[1:])))
+        for row in reader:
+            try:
+                dia_str = row["Dia"].strip().strip('"')
+                mm_vals.append(_nominal_str_to_mm(dia_str))
+            except Exception:
+                pass
     except Exception:
         pass
+    if not mm_vals:
+        return 6.0, 64.0
+    return min(mm_vals), max(mm_vals)
 
-    # ── 6. Head geometry constants ────────────────────────────────────────
-    cham = (e - s) * math.sin(math.radians(15))
 
-    # ── 7. HEAD + BODY revolve profile ────────────────────────────────────
-    #
-    #  HEAD  (z = 0 → k):  s, k, e, c, dw, r  ← fa.dimTable  (never deviated)
-    #  SHANK (z = 0 → -length):  tr, d_eff     ← threading module
-    #
-    fm = FSFaceMaker()
-    fm.AddPoint(0.0,           k)
-    fm.AddPoint(s / 2.0,       k)
-    fm.AddPoint(s / sqrt3,     k - cham)
-    fm.AddPoint(s / sqrt3,     c)
-    if dw is not None:
-        fm.AddPoint(dw / 2.0,  c)
-        fm.AddPoint(dw / 2.0,  0.0)
-    fm.AddPoint(tr + r,        0.0)
-    fm.AddArc2(0.0, -r, 90)          # fillet: (tr+r, 0) → (tr, -r)
-
-    _b_profile = min(b, length)
-    if length - r > _b_profile:
-        if not fa.Thread:
-            fm.AddPoint(tr, -1 * (length - _b_profile))
-
-    # shank + tip — d_eff only, NOT nominal dia
-    fm.AddPoint(tr,              -length + d_eff / 10)
-    fm.AddPoint(d_eff * 4 / 10,  -length)
-    fm.AddPoint(0.0,             -length)
-
-    shape = self.RevolveZ(fm.GetFace())
-
-    # ── 8. Hex head cut ───────────────────────────────────────────────────
-    extrude = self.makeHexPrism(s, k + length + 2)
-    extrude.translate(Base.Vector(0.0, 0.0, -length - 1))
-    shape = shape.common(extrude)
-
-    # ── 9. Threading — delegated to threading modules ─────────────────────
-    if fa.Thread:
-        tl_cut   = min(b, max(length - r, 0.0))
-        offset_z = -(length - tl_cut)
-        # d_eff passed as `dia` — threading modules use get_shank_dia()
-        # internally so the cutter OD matches the body exactly
-        if is_asme:
-            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+def _nominal_str_to_mm(s):
+    """Convert nominal dia string to mm.  '5/8' → 15.875,  '1-1/4' → 31.75"""
+    s = str(s).strip().replace("-", " ")
+    total = 0.0
+    for p in s.split():
+        if "/" in p:
+            n, d = p.split("/")
+            total += float(n) / float(d)
         else:
-            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+            total += float(p)
+    return total * 25.4
 
-    return shape
+
+# Dia bounds loaded from CSV — do NOT edit these; change DEVIATION_PCT_* above
+_ASME_DIA_MIN_MM, _ASME_DIA_MAX_MM = _asme_dia_bounds_mm()
+DEVIATION_DIA_MIN_MM = _ASME_DIA_MIN_MM   # smallest nominal dia in CSV (mm)
+DEVIATION_DIA_MAX_MM = _ASME_DIA_MAX_MM   # largest  nominal dia in CSV (mm)
+
+
+def _interpolated_deviation_pct(dia_mm):
+    """Return linearly interpolated deviation % for dia_mm."""
+    if dia_mm <= DEVIATION_DIA_MIN_MM:
+        return DEVIATION_PCT_SMALL
+    if dia_mm >= DEVIATION_DIA_MAX_MM:
+        return DEVIATION_PCT_LARGE
+    t = (dia_mm - DEVIATION_DIA_MIN_MM) / (DEVIATION_DIA_MAX_MM - DEVIATION_DIA_MIN_MM)
+    return DEVIATION_PCT_SMALL + t * (DEVIATION_PCT_LARGE - DEVIATION_PCT_SMALL)
+
+
+# ── CSV loader ────────────────────────────────────────────────────────────────
+
+@_functools.lru_cache(maxsize=1)
+def _limits():
+    """(nominal_str, tpi_float, series_str, class_str) -> outer_dia_inches"""
+    import csv, io
+    table = {}
+    try:
+        with open(_CSV_ASME, newline="", encoding="utf-8") as f:
+            content = f.read()
+        lines = content.splitlines()
+        reader = csv.DictReader(io.StringIO("\n".join(lines[1:])))
+        for row in reader:
+            try:
+                dia    = row["Dia"].strip().strip('"')
+                tpi    = float(row["TPI"])
+                series = row["Series"].strip().strip('"')
+                cls    = row["Class"].strip().strip('"')
+                key    = (dia, tpi, series, cls)
+                table[key] = float(row["Thread_Outer_Dia"])
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return table
+
+
+# ── Nominal helpers ───────────────────────────────────────────────────────────
+
+def bolt_nominal(diam_str):
+    """'5/8in' → '5/8',  '5/8"' → '5/8',  '1-1/4in' → '1-1/4'"""
+    s = str(diam_str or "").strip()
+    s = s.replace('"', "in")
+    if not s or s == "Auto":
+        return ""
+    s = s.rstrip("in").rstrip()
+    return s
+
+
+
+
+
+# ── Dashboard query helpers ───────────────────────────────────────────────────
+
+def valid_tpis_for_series(nominal, series):
+    """Return sorted-descending TPI list for (nominal, series).
+
+    For UN/UNR: CSV rows are stored under UNC/UNF/UNEF series names, not
+    under a literal "UN" key.  Aggregate all series so the dropdown is never empty.
+    For UNC/UNF/UNEF: use exact series match as before.
+    """
+    if series in ("UN", "UNR"):
+        raw = sorted({k[1] for k in _limits() if k[0] == nominal}, reverse=True)
+    else:
+        raw = sorted(
+            {k[1] for k in _limits() if k[0] == nominal and k[2] == series},
+            reverse=True)
+    return [int(t) if t == int(t) else t for t in raw]
+
+
+def valid_thread2types_for_dia(nominal):
+    lims = _limits()
+    in_table = {k[2] for k in lims if k[0]==nominal}
+    order = ["UNC","UNF","UNEF","UN","UNR"]
+    result = [s for s in order if s in in_table]
+    # UN and UNR always available — they share pitches with UNC/UNF/UNEF
+    if "UN" not in result:
+        result += ["UN", "UNR"]
+    return result or ["UNC"]
+
+
+def valid_series_for_dia(nominal):
+    order = ["UNC","UNF","UNEF","UN"]
+    seen  = {k[2] for k in _limits() if k[0]==nominal}
+    return [s for s in order if s in seen] or ["UNC"]
+
+
+def valid_classes_for_series_tpi(nominal, series, tpi):
+    """Return class list for (nominal, series, tpi).
+
+    For UN/UNR: look across ALL stored series for that dia+tpi because rows are
+    stored under UNC/UNF/UNEF series names in the CSV.
+    """
+    if series in ("UN", "UNR"):
+        classes = sorted({k[3] for k in _limits()
+                          if k[0]==nominal and k[1]==float(tpi)})
+    else:
+        classes = sorted({k[3] for k in _limits()
+                          if k[0]==nominal and k[2]==series and k[1]==float(tpi)})
+    return classes or ["2A", "3A"]
+
+
+def all_classes_for_nominal(nominal):
+    return sorted({k[3] for k in _limits() if k[0]==nominal}) or ["2A","3A"]
+
+
+def tpi_enum_options(nominal, thread_type):
+    """Return TPI dropdown list: standard CSV values first, then 'Custom' last.
+
+    Standard TPI values come from the CSV for this nominal + thread_type.
+    For UN/UNR aggregates across all stored series — never returns only Custom.
+    """
+    tpis = valid_tpis_for_series(nominal, thread_type)
+    return [str(t) for t in tpis] + ["Custom"]
+
+
+
+def get_all_options(nominal):
+    return {"types": valid_thread2types_for_dia(nominal),
+            "series": valid_series_for_dia(nominal),
+            "classes": all_classes_for_nominal(nominal)}
+
+
+# ── Raw CSV lookup (no deviation) ────────────────────────────────────────────
+
+def outer_dia_mm(nominal, series, tpi, cls):
+    """Raw Thread_Outer_Dia mm from CSV — NO deviation applied.
+    Use get_shank_dia() for the deviated effective diameter.
+    """
+    val = _limits().get((str(nominal), float(tpi), str(series), str(cls)))
+    return val * 25.4 if val is not None else None
+
+
+def thread_dia_limits_asme(nominal_mm, P_mm, cls,
+                            nominal_str="", series="UNC", tpi=0):
+    H = _sqrt3 / 2.0 * P_mm
+    es_mm = 0.0
+    if tpi > 0 and cls in ("1A","2A"):
+        pi = 25.4 / tpi
+        es_in = (0.0015 * (nominal_mm/25.4)**(1/3)
+                 + 0.0015 * pi**0.5 + 0.0015/tpi)
+        es_mm = es_in * 25.4
+    d_mean  = nominal_mm - es_mm - 0.6495 * P_mm
+    Td_mm   = (0.0015*(nominal_mm**(1/3))
+               + 0.0015*P_mm**0.5 + 0.0015*P_mm)
+    d_min   = d_mean - Td_mm
+    table_found = False
+    d_final = nominal_mm - es_mm
+    if nominal_str and tpi > 0:
+        val = outer_dia_mm(nominal_str, series, tpi, cls)
+        if val:
+            d_final = val
+            table_found = True
+    dev_pct = abs(d_mean-d_final)/d_mean*100 if d_mean > 0 else 0
+    return dict(d_mean=d_mean, d_final=d_final, d_min=d_min,
+                es_mm=es_mm, Td_mm=Td_mm, dev_pct=dev_pct,
+                table_found=table_found)
+
+
+# ── Parameter resolver ────────────────────────────────────────────────────────
+
+def resolve_thread_params(nominal, fa):
+    thread_type = str(getattr(fa, "Thread_Type",       "UNC") or "UNC")
+    tpi_sel     = str(getattr(fa, "Thread_TPI",        "")   or "")
+    cust_tpi    = int(getattr(fa, "Thread_TPI_Custom",  0)   or 0)
+    cls         = str(getattr(fa, "Thread_Class",      "2A") or "2A")
+    calc_tpi    = getattr(fa, "calc_tpi",   None)
+    calc_pitch  = getattr(fa, "calc_pitch", None)
+    is_unr      = (thread_type == "UNR")
+    series = thread_type if thread_type in ("UNC","UNF","UNEF") else "UN"
+
+    if tpi_sel == "Custom" and cust_tpi > 0:
+        # User typed a specific custom TPI — use it
+        tpi = cust_tpi
+    elif calc_tpi and calc_tpi > 0:
+        # Already resolved by FastenersCmd execute() — use it
+        tpi = int(calc_tpi)
+    elif tpi_sel and tpi_sel != "Custom":
+        # Standard dropdown value — parse directly
+        try:
+            tpi = float(tpi_sel)
+            tpi = int(tpi) if tpi == int(tpi) else tpi
+        except Exception:
+            tpi = 0
+    else:
+        tpi = 0
+
+    # ── Resolve tpi from pitch when still 0 ─────────────────────────────
+    # Priority order for zero-tpi recovery:
+    #   1. calc_pitch set by FastenersCmd (most accurate — reflects actual
+    #      pitch being used, e.g. 1.27mm → TPI=20 for 1/4in)
+    #   2. Standard TPI nearest to the nominal from CSV table
+    # This ensures deviation is ALWAYS applied — never returns nominal.
+    if tpi == 0:
+        if calc_pitch and float(calc_pitch) > 0:
+            # Derive TPI from the pitch already resolved by FastenersCmd
+            tpi = round(25.4 / float(calc_pitch))
+        elif nominal:
+            # Last resort: use coarsest standard TPI for this diameter
+            _std = valid_tpis_for_series(nominal, thread_type)
+            if _std:
+                tpi = _std[0]
+
+    P_mm = (25.4/tpi) if tpi > 0 else (float(calc_pitch) if calc_pitch else 1.27)
+    return dict(tpi=tpi, series=series, cls=cls,
+                P_mm=P_mm, is_unr=is_unr, thread_type=thread_type)
+
+
+# ── Thread cutter geometry ────────────────────────────────────────────────────
+
+def make_UN_thread_cutter(dia, P, blen, unr=False):
+    """Return UN/UNR thread cutter solid.
+    dia = d_eff (deviated) — passed from cut_thread via get_shank_dia().
+    """
+    import Part, FastenerBase
+    import FreeCAD as _FC
+    Base   = _FC.Base
+    H      = _sqrt3 / 2.0 * P
+    d2     = dia / 2.0
+    trot   = blen // P + 1
+    ht     = trot * P
+    x_root = d2 - 0.625 * H
+    h_root = P / 8.0
+
+    fm = FastenerBase.FSFaceMaker()
+    fm.AddPoint(d2 + _sqrt3*3/80.0*P, -0.475*P)
+    fm.AddPoint(x_root, -h_root)
+    if unr:
+        fm.AddArc(x_root - 0.5*0.125*P, 0, x_root, h_root)
+    else:
+        fm.AddPoint(x_root, h_root)
+    fm.AddPoint(d2 + _sqrt3*3/80.0*P,  0.475*P)
+
+    wire = fm.GetClosedWire()
+    wire.translate(Base.Vector(0, 0, -ht - P*0.6))
+
+    depth      = 0.625 * H
+    helix      = Part.makeLongHelix(P, ht, dia/2.0, 0, False)
+    lead_helix = Part.makeLongHelix(P, P/2.0, dia/2.0 + 0.55*depth, 0, False)
+    helix.rotate(Base.Vector(0,0,0), Base.Vector(1,0,0), 180)
+    lead_helix.translate(Base.Vector(-0.55*depth, 0, 0))
+
+    path  = Part.Wire([helix, lead_helix])
+    sweep = Part.BRepOffsetAPI.MakePipeShell(path)
+    sweep.setFrenetMode(True)
+    sweep.setTransitionMode(1)
+    sweep.add(wire)
+    if sweep.isReady():
+        sweep.build()
+    else:
+        raise RuntimeError("[FSThreadingASME] sweep failed")
+    sweep.makeSolid()
+    threads = sweep.shape()
+    box = Part.makeBox(2*dia, 2*dia, dia, Base.Vector(-dia, -dia, -P*0.1))
+    return threads.cut(box)
+
+
+# ── Single source of effective shank/cutter diameter ─────────────────────────
+
+def get_shank_dia(fa, dia_fallback):
+    """Return d_eff mm — deviated effective diameter for ASME threads.
+
+    Called by EVERY FsMake file to get both:
+      — shank + tip body profile diameter
+      — thread cutter OD
+
+    Flow:
+        fa.calc_diam → bolt_nominal() → CSV key
+        Thread_Type + Thread_TPI + Thread_Class
+            → resolve_thread_params() → outer_dia_mm() → raw d (mm)
+            → _interpolated_deviation_pct(dia_fallback) → pct
+            → d_eff = d − (d × pct / 100)
+
+    Falls back to dia_fallback (no deviation) if TPI=0 or not in table.
+
+    Parameters
+    ----------
+    fa           : fastener attributes object
+    dia_fallback : float  nominal mm — fallback + interpolation reference
+    """
+    nominal = bolt_nominal(getattr(fa, "calc_diam", "") or "")
+    params  = resolve_thread_params(nominal, fa)
+    tpi     = params["tpi"]
+    series  = params["series"]
+    cls     = params["cls"]
+
+    d = outer_dia_mm(nominal, series, float(tpi), cls) if (nominal and tpi > 0) else None
+    if not d or d <= 0:
+        return dia_fallback
+
+    pct          = _interpolated_deviation_pct(dia_fallback)
+    deviation_mm = d * pct / 100.0
+    return d - deviation_mm
+
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+
+def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
+    """Cut ASME UN/UNR thread into shape.
+
+    d_cutter comes from get_shank_dia() — same deviated value used for
+    bolt body profile. Consistent diameter throughout.
+
+    Parameters
+    ----------
+    shape    : FreeCAD shape
+    fa       : fastener attributes
+    dia      : nominal mm — fallback + interpolation reference
+    tl       : thread length mm
+    offset_z : z offset mm
+    P_mm     : pitch mm (optional)
+    """
+    import FreeCAD
+    nominal = bolt_nominal(fa.calc_diam)
+    params  = resolve_thread_params(nominal, fa)
+    tpi     = params["tpi"]
+    series  = params["series"]
+    cls     = params["cls"]
+    is_unr  = params["is_unr"]
+    if P_mm is None or P_mm <= 0:
+        P_mm = params["P_mm"]
+
+    # d_cutter — deviated, via get_shank_dia (same as bolt body diameter)
+    d_cutter = get_shank_dia(fa, dia)
+
+    # console log — all values guarded against None
+    try:
+        _d_raw = outer_dia_mm(nominal, series, float(tpi), cls) if (nominal and tpi > 0) else dia
+        _d_raw = _d_raw if _d_raw is not None else dia
+        _pct   = _interpolated_deviation_pct(float(dia)) if (dia and float(dia) > 0) else 0.0
+        _dev   = (_d_raw * _pct / 100.0) if (_d_raw and _d_raw > 0) else 0.0
+        _dc    = d_cutter if d_cutter is not None else dia
+        FreeCAD.Console.PrintMessage(
+            f"[ASME cut] nom={nominal or '?'}  series={series or '?'}"
+            f"  tpi={tpi}  cls={cls or '?'}\n"
+            f"  P                      = {float(P_mm):.4f} mm\n"
+            f"  Thread_Outer_Dia (CSV) = {float(_d_raw):.5f} mm\n"
+            f"  deviation pct          = {float(_pct):.4f} %\n"
+            f"  deviation_mm           = {float(_dev):.5f} mm\n"
+            f"  d_eff (body + cutter)  = {float(_dc):.5f} mm\n"
+            f"  tl={float(tl):.3f} mm  offset_z={float(offset_z):.3f} mm\n")
+    except Exception as _log_err:
+        FreeCAD.Console.PrintMessage(f"[ASME cut] log error: {_log_err}\n")
+
+    fa.calc_tpi = tpi
+    tc = make_UN_thread_cutter(d_cutter, P_mm, tl, unr=is_unr)
+    tc.translate(FreeCAD.Base.Vector(0, 0, offset_z))
+    return shape.cut(tc)

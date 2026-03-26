@@ -157,7 +157,18 @@ def bolt_nominal(diam_str):
 # ── Dashboard query helpers ───────────────────────────────────────────────────
 
 def valid_tpis_for_series(nominal, series):
-    raw = sorted({k[1] for k in _limits() if k[0]==nominal and k[2]==series}, reverse=True)
+    """Return sorted-descending TPI list for (nominal, series).
+
+    For UN/UNR: CSV rows are stored under UNC/UNF/UNEF series names, not
+    under a literal "UN" key.  Aggregate all series so the dropdown is never empty.
+    For UNC/UNF/UNEF: use exact series match as before.
+    """
+    if series in ("UN", "UNR"):
+        raw = sorted({k[1] for k in _limits() if k[0] == nominal}, reverse=True)
+    else:
+        raw = sorted(
+            {k[1] for k in _limits() if k[0] == nominal and k[2] == series},
+            reverse=True)
     return [int(t) if t == int(t) else t for t in raw]
 
 
@@ -166,6 +177,7 @@ def valid_thread2types_for_dia(nominal):
     in_table = {k[2] for k in lims if k[0]==nominal}
     order = ["UNC","UNF","UNEF","UN","UNR"]
     result = [s for s in order if s in in_table]
+    # UN and UNR always available — they share pitches with UNC/UNF/UNEF
     if "UN" not in result:
         result += ["UN", "UNR"]
     return result or ["UNC"]
@@ -178,9 +190,18 @@ def valid_series_for_dia(nominal):
 
 
 def valid_classes_for_series_tpi(nominal, series, tpi):
-    classes = sorted({k[3] for k in _limits()
-                      if k[0]==nominal and k[2]==series and k[1]==float(tpi)})
-    return classes or ["2A","3A"]
+    """Return class list for (nominal, series, tpi).
+
+    For UN/UNR: look across ALL stored series for that dia+tpi because rows are
+    stored under UNC/UNF/UNEF series names in the CSV.
+    """
+    if series in ("UN", "UNR"):
+        classes = sorted({k[3] for k in _limits()
+                          if k[0]==nominal and k[1]==float(tpi)})
+    else:
+        classes = sorted({k[3] for k in _limits()
+                          if k[0]==nominal and k[2]==series and k[1]==float(tpi)})
+    return classes or ["2A", "3A"]
 
 
 def all_classes_for_nominal(nominal):
@@ -188,8 +209,14 @@ def all_classes_for_nominal(nominal):
 
 
 def tpi_enum_options(nominal, thread_type):
-    series = thread_type if thread_type in ("UNC","UNF","UNEF") else "UN"
-    return [str(t) for t in valid_tpis_for_series(nominal, series)] + ["Custom"]
+    """Return TPI dropdown list: standard CSV values first, then 'Custom' last.
+
+    Standard TPI values come from the CSV for this nominal + thread_type.
+    For UN/UNR aggregates across all stored series — never returns only Custom.
+    """
+    tpis = valid_tpis_for_series(nominal, thread_type)
+    return [str(t) for t in tpis] + ["Custom"]
+
 
 
 def get_all_options(nominal):
@@ -247,10 +274,13 @@ def resolve_thread_params(nominal, fa):
     series = thread_type if thread_type in ("UNC","UNF","UNEF") else "UN"
 
     if tpi_sel == "Custom" and cust_tpi > 0:
+        # User typed a specific custom TPI — use it
         tpi = cust_tpi
     elif calc_tpi and calc_tpi > 0:
+        # Already resolved by FastenersCmd execute() — use it
         tpi = int(calc_tpi)
     elif tpi_sel and tpi_sel != "Custom":
+        # Standard dropdown value — parse directly
         try:
             tpi = float(tpi_sel)
             tpi = int(tpi) if tpi == int(tpi) else tpi
@@ -258,6 +288,22 @@ def resolve_thread_params(nominal, fa):
             tpi = 0
     else:
         tpi = 0
+
+    # ── Resolve tpi from pitch when still 0 ─────────────────────────────
+    # Priority order for zero-tpi recovery:
+    #   1. calc_pitch set by FastenersCmd (most accurate — reflects actual
+    #      pitch being used, e.g. 1.27mm → TPI=20 for 1/4in)
+    #   2. Standard TPI nearest to the nominal from CSV table
+    # This ensures deviation is ALWAYS applied — never returns nominal.
+    if tpi == 0:
+        if calc_pitch and float(calc_pitch) > 0:
+            # Derive TPI from the pitch already resolved by FastenersCmd
+            tpi = round(25.4 / float(calc_pitch))
+        elif nominal:
+            # Last resort: use coarsest standard TPI for this diameter
+            _std = valid_tpis_for_series(nominal, thread_type)
+            if _std:
+                tpi = _std[0]
 
     P_mm = (25.4/tpi) if tpi > 0 else (float(calc_pitch) if calc_pitch else 1.27)
     return dict(tpi=tpi, series=series, cls=cls,

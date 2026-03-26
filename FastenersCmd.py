@@ -893,14 +893,30 @@ class FSScrewObject(FSBaseObject):
                 obj.addProperty("App::PropertyEnumeration", "Thread_TPI", "Parameters",
                     translate("FastenerCmd", "Thread_TPI — from ASME B1.1 table or Custom")
                 ).Thread_TPI = _sopts
+                # Default to first standard TPI (not Custom) — same as
+                # Length defaulting to first standard length, not Custom
+                _first_std_tpi = next((x for x in _sopts if x != "Custom"), None)
                 try:
-                    obj.Thread_TPI = next((x for x in _sopts if x != "Custom"), "Custom")
+                    if _first_std_tpi:
+                        obj.Thread_TPI = _first_std_tpi
                 except Exception: pass
                 obj.setEditorMode("Thread_TPI", 2)
             if not hasattr(obj, "Thread_TPI_Custom"):
+                # Mirror current TPI into Custom on creation so user never sees 0
+                _cur_tpi_str = ""
+                try:
+                    _cur_tpi_str = str(obj.Thread_TPI)
+                except Exception:
+                    pass
+                _init_custom = 0
+                if _cur_tpi_str and _cur_tpi_str != "Custom":
+                    try:
+                        _init_custom = int(float(_cur_tpi_str))
+                    except (ValueError, TypeError):
+                        pass
                 obj.addProperty("App::PropertyInteger", "Thread_TPI_Custom", "Parameters",
                     translate("FastenerCmd", "Thread_TPI Custom value")
-                ).Thread_TPI_Custom = 0
+                ).Thread_TPI_Custom = _init_custom
                 obj.setEditorMode("Thread_TPI_Custom", 2)
             if not hasattr(obj, "Thread_Class"):
                 obj.addProperty("App::PropertyEnumeration", "Thread_Class", "Parameters",
@@ -1143,12 +1159,23 @@ class FSScrewObject(FSBaseObject):
                 try:
                     _cur = str(fp.Thread_TPI)
                     fp.Thread_TPI = _tpi_opts
-                    fp.Thread_TPI = _cur if _cur in _tpi_opts else \
-                        next((x for x in _tpi_opts if x != "Custom"), "Custom")
+                    # If current value is Custom with no custom TPI set (=0),
+                    # reset to first standard TPI so user sees a real value
+                    _cust_val = int(getattr(fp, "Thread_TPI_Custom", 0) or 0)
+                    if _cur == "Custom" and _cust_val == 0:
+                        # Reset to first standard — same as Length defaulting to table value
+                        _first = next((x for x in _tpi_opts if x != "Custom"), None)
+                        if _first:
+                            fp.Thread_TPI = _first
+                    elif _cur in _tpi_opts:
+                        fp.Thread_TPI = _cur
+                    else:
+                        _first = next((x for x in _tpi_opts if x != "Custom"), "Custom")
+                        fp.Thread_TPI = _first
                 except Exception: pass
                 # ── Mirror standard TPI into Thread_TPI_Custom ────────────
                 # Same pattern as Length/LengthCustom: standard selection
-                # always mirrors into Custom field so user sees current value.
+                # always mirrors into Custom field so user always sees current value.
                 try:
                     _tpi_now = str(fp.Thread_TPI)
                     if _tpi_now != "Custom" and hasattr(fp, "Thread_TPI_Custom"):

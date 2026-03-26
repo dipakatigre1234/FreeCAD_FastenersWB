@@ -325,26 +325,30 @@ def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
     mc = getattr(fa, "Thread_Class_ISO", None)
     mp = getattr(fa, "Thread_Pitch",     None)
 
-    # console log
-    _d_raw = None
-    if mp and mc:
-        try:
-            _d_raw = mean_dia_from_table(
-                getattr(fa, "calc_diam", "") or "",
-                str(float(str(mp))), str(mc))
-        except Exception:
-            pass
-    _d_raw = _d_raw or dia
-    _pct   = _interpolated_deviation_pct(dia)
-    _dev   = _d_raw * _pct / 100.0
-    _FC.Console.PrintMessage(
-        f"[Metric cut] pitch={P:.4f} mm  class={mc or '-'}\n"
-        f"  Thread_Mean_Dia (CSV)  = {_d_raw:.5f} mm\n"
-        f"  deviation pct          = {_pct:.4f} %\n"
-        f"  deviation_mm           = {_dev:.5f} mm\n"
-        f"  d_eff (body + cutter)  = {d_cutter:.5f} mm\n"
-        f"  root={'Round' if root_round else 'Flat'}"
-        f"  tl={tl:.3f} mm  offset_z={offset_z:.3f} mm\n")
+    # console log — all values guarded against None
+    try:
+        _d_raw = None
+        if mp and mc:
+            try:
+                _d_raw = mean_dia_from_table(
+                    getattr(fa, "calc_diam", "") or "",
+                    str(float(str(mp))), str(mc))
+            except Exception:
+                pass
+        _d_raw = float(_d_raw) if _d_raw else float(dia)
+        _pct   = _interpolated_deviation_pct(float(dia)) if dia else 0.0
+        _dev   = _d_raw * _pct / 100.0
+        _dc    = float(d_cutter) if d_cutter is not None else float(dia)
+        _FC.Console.PrintMessage(
+            f"[Metric cut] pitch={float(P):.4f} mm  class={mc or '-'}\n"
+            f"  Thread_Mean_Dia (CSV)  = {_d_raw:.5f} mm\n"
+            f"  deviation pct          = {_pct:.4f} %\n"
+            f"  deviation_mm           = {_dev:.5f} mm\n"
+            f"  d_eff (body + cutter)  = {_dc:.5f} mm\n"
+            f"  root={'Round' if root_round else 'Flat'}"
+            f"  tl={float(tl):.3f} mm  offset_z={float(offset_z):.3f} mm\n")
+    except Exception as _log_err:
+        _FC.Console.PrintMessage(f"[Metric cut] log error: {_log_err}\n")
 
     tc = make_metric_thread_cutter(d_cutter, P, tl, root_round=root_round)
     tc.translate(_FC.Base.Vector(0, 0, offset_z))

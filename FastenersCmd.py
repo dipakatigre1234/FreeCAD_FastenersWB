@@ -835,17 +835,32 @@ class FSScrewObject(FSBaseObject):
             obj.setEditorMode("Thread_Root", 0)
 
         if "TPitch" in params and not _this_type_early.startswith("ASME"):
+            # Resolve actual diameter — "Auto" has no pitches so use AutoDiameter
             _dia_v = str(getattr(obj, "Diameter", diameter) or "")
+            if _dia_v in ("Auto", "", "Custom"):
+                try:
+                    _dia_v = screwMaker.AutoDiameter(type, None, None, False)
+                except Exception:
+                    _dia_v = diameter or ""
             if not hasattr(obj, "Thread_Pitch"):
                 _pitches = _TM.valid_pitches_for_dia(_dia_v)
-                obj.addProperty("App::PropertyEnumeration", "Thread_Pitch", "Parameters",
-                    translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
-                ).Thread_Pitch = _pitches
-                try:
-                    obj.Thread_Pitch = _pitches[0]
-                except Exception:
-                    pass
-                obj.setEditorMode("Thread_Pitch", 2)
+                if not _pitches:
+                    # fallback: try with diameter directly resolved
+                    try:
+                        _dia_v2 = screwMaker.GetAllDiams(type)
+                        _dia_v = _dia_v2[0] if _dia_v2 else _dia_v
+                        _pitches = _TM.valid_pitches_for_dia(_dia_v)
+                    except Exception:
+                        pass
+                if _pitches:
+                    obj.addProperty("App::PropertyEnumeration", "Thread_Pitch", "Parameters",
+                        translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
+                    ).Thread_Pitch = _pitches
+                    try:
+                        obj.Thread_Pitch = _pitches[0]
+                    except Exception:
+                        pass
+                    obj.setEditorMode("Thread_Pitch", 2)
             if not hasattr(obj, "Thread_Class_ISO"):
                 _p0 = ""
                 try:
@@ -1017,7 +1032,7 @@ class FSScrewObject(FSBaseObject):
             fp.Diameter = self.calc_diam
             diameterchange = True
         elif fp.Diameter == "Custom" and hasattr(fp,"DiameterCustom"):
-            self.calc_diam = str(fp.DiameterCustomi.Value)
+            self.calc_diam = str(fp.DiameterCustom.Value)
         else:
             self.calc_diam = fp.Diameter
 
@@ -1092,39 +1107,60 @@ class FSScrewObject(FSBaseObject):
         has_ext   = "TThread" in params
 
         if thread_on and not asme_type:
-            _dia_pre = str(fp.Diameter or "")
-            if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
-                _pp = _TM.valid_pitches_for_dia(_dia_pre)
-                fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
-                    "Parameters",
-                    translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
-                ).Thread_Pitch = _pp
+            # Use calc_diam (already resolved from Auto) for CSV lookup
+            _dia_pre = str(self.calc_diam or fp.Diameter or "")
+
+            # ── Ensure Thread_Pitch property exists and has valid options ──
+            # Always repopulate from CSV using resolved diameter
+            _pp = _TM.valid_pitches_for_dia(_dia_pre)
+            if not _pp:
+                # last resort: try raw fp.Diameter
+                _pp = _TM.valid_pitches_for_dia(str(fp.Diameter or ""))
+            if _pp:
+                if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
+                    fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
+                        "Parameters",
+                        translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
+                    ).Thread_Pitch = _pp
+                    fp.setEditorMode("Thread_Pitch", 0)
+                elif hasattr(fp, "Thread_Pitch"):
+                    try:
+                        _cur_p2 = str(fp.Thread_Pitch)
+                        fp.Thread_Pitch = _pp
+                        fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp else _pp[0]
+                        fp.setEditorMode("Thread_Pitch", 0)
+                    except Exception:
+                        pass
+
+            # ── Ensure Thread_Class_ISO property exists and has valid options ──
+            _p_now = ""
+            try:
+                _p_now = str(fp.Thread_Pitch)
+            except Exception:
+                pass
+            _p_now = _p_now or (_pp[0] if _pp else "1.0")
+            _cp = _TM.valid_classes_for_dia_pitch(_dia_pre, _p_now)
+            if not _cp:
+                _cp = ["6g"]
             if not hasattr(fp, "Thread_Class_ISO") and "TPitch" in params:
-                _p0p = str(getattr(fp, "Thread_Pitch", "1.0") or "1.0")
-                _cp  = _TM.valid_classes_for_dia_pitch(_dia_pre, _p0p) or ["6g"]
                 fp.addProperty("App::PropertyEnumeration", "Thread_Class_ISO",
                     "Parameters",
                     translate("FastenerCmd", "Thread_Class — ISO 965 (6g=standard)")
                 ).Thread_Class_ISO = _cp
-            if hasattr(fp, "Thread_Pitch"):
-                _pp2 = _TM.valid_pitches_for_dia(_dia_pre)
-                if _pp2:
-                    try:
-                        _cur_p2 = str(fp.Thread_Pitch)
-                        fp.Thread_Pitch = _pp2
-                        fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp2 else _pp2[0]
-                    except Exception:
-                        pass
-            if hasattr(fp, "Thread_Class_ISO") and hasattr(fp, "Thread_Pitch"):
-                _pp3 = str(fp.Thread_Pitch or "")
-                _cp3 = _TM.valid_classes_for_dia_pitch(_dia_pre, _pp3)
-                if _cp3:
-                    try:
-                        _cur_c3 = str(fp.Thread_Class_ISO)
-                        fp.Thread_Class_ISO = _cp3
-                        fp.Thread_Class_ISO = _cur_c3 if _cur_c3 in _cp3 else _cp3[0]
-                    except Exception:
-                        pass
+                _def_cls = "6g" if "6g" in _cp else _cp[0]
+                try:
+                    fp.Thread_Class_ISO = _def_cls
+                except Exception:
+                    pass
+                fp.setEditorMode("Thread_Class_ISO", 0)
+            elif hasattr(fp, "Thread_Class_ISO"):
+                try:
+                    _cur_c = str(fp.Thread_Class_ISO)
+                    fp.Thread_Class_ISO = _cp
+                    fp.Thread_Class_ISO = _cur_c if _cur_c in _cp else _cp[0]
+                    fp.setEditorMode("Thread_Class_ISO", 0)
+                except Exception:
+                    pass
 
         _set_thread_props_visibility(fp, thread_on)
 
@@ -1421,6 +1457,19 @@ class FSScrewObject(FSBaseObject):
         screwMaker.updateFastenerParameters()
         self.BackupObject(fp)
         self.baseType = FSGetTypeAlias(self.Type)
+
+        # ── Pre-process dimTable for ASME types before FsMake unpacking ───
+        # New CSV has 7 data cols: b1, P, c, e, k, r, s  (b2 and dw removed)
+        # FsMakeHexHeadBolt (doc10) expects 8 cols: b1, P, c, _dw_unused, e, k, r, s
+        # → CMD inserts dummy dw=0.0 between c and e so FsMake unpack works unchanged.
+        if self.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3", "ASMEB18.2.1.7"):
+            try:
+                if self.dimTable and len(self.dimTable) == 7:
+                    b1, P_t, c_t, e_t, k_t, r_t, s_t = self.dimTable
+                    # insert dummy dw=0.0 — FsMake discards it (_dw_unused)
+                    self.dimTable = (b1, P_t, c_t, 0.0, e_t, k_t, r_t, s_t)
+            except Exception:
+                pass
 
         (key, s) = FastenerBase.FSGetKey(self.GetKey())
         if s is None:

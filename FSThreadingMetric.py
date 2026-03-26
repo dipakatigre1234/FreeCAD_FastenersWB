@@ -96,21 +96,29 @@ def _interpolated_deviation_pct(dia_mm):
 
 @_functools.lru_cache(maxsize=1)
 def _metric_table():
-    """(dia_str, pitch_str, class_str) -> (Thread_Mean_Dia_mm, dmax_mm, dmin_mm)"""
-    import csv
+    """(dia_str, pitch_str, class_str) -> (Thread_Mean_Dia_mm, dmax_mm, dmin_mm)
+
+    CSV has a table-name row on line 0, real headers on line 1.
+    Skip line 0 before passing to DictReader.
+    """
+    import csv, io
     table = {}
     try:
         with open(_CSV_METRIC, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    key = (str(row["Dia_mm"]).strip(),
-                           str(row["Pitch_mm"]).strip(),
-                           str(row["Class"]).strip())
-                    table[key] = (float(row["Thread_Mean_Dia_mm"]),
-                                  float(row["dmax_mm"]),
-                                  float(row["dmin_mm"]))
-                except Exception:
-                    pass
+            raw = f.read()
+        lines = raw.splitlines()
+        # Skip the table-name row (line 0), pass lines[1:] to DictReader
+        reader = csv.DictReader(io.StringIO("\n".join(lines[1:])))
+        for row in reader:
+            try:
+                key = (str(row["Dia_mm"]).strip().strip('"'),
+                       str(row["Pitch_mm"]).strip().strip('"'),
+                       str(row["Class"]).strip().strip('"'))
+                table[key] = (float(row["Thread_Mean_Dia_mm"]),
+                              float(row["dmax_mm"]),
+                              float(row["dmin_mm"]))
+            except Exception:
+                pass
     except Exception:
         pass
     return table
@@ -372,7 +380,7 @@ def is_metric_type(fp_type_str):
 
 
 def set_metric_thread_visibility(fp, thread_on):
-    """Show/hide Thread_Pitch and Thread_Class_ISO properties in FreeCAD panel."""
+    """Show/hide metric thread properties in FreeCAD panel."""
     if hasattr(fp, "Thread_Pitch"):
         fp.setEditorMode("Thread_Pitch", 0 if thread_on else 2)
     _pitch_sel = ""
@@ -386,5 +394,8 @@ def set_metric_thread_visibility(fp, thread_on):
         fp.setEditorMode("Thread_Class_ISO", 0 if _cls_ready else 2)
     if hasattr(fp, "Thread_Root"):
         fp.setEditorMode("Thread_Root", 0 if thread_on else 2)
+    # Thread_Length — show when thread is on so user can set custom thread length
+    if hasattr(fp, "Thread_Length"):
+        fp.setEditorMode("Thread_Length", 0 if thread_on else 2)
     if hasattr(fp, "MetricMeanDia"):
         fp.setEditorMode("MetricMeanDia", 2)

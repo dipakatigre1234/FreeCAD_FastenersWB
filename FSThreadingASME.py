@@ -52,8 +52,8 @@ _CSV_ASME = _os.path.join(_CSV_DIR, "un_unr_limits_of_size.csv")
 #   2.5 in  (63.50 mm)  → 1.500 % subtracted
 #
 # ↓↓ Change only these two values — dia bounds are read from the CSV ↓↓
-DEVIATION_PCT_SMALL  = 2.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
-DEVIATION_PCT_LARGE  = 1.5    # % subtracted at the largest  dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_SMALL  = 0.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_LARGE  = 0.0   # % subtracted at the largest  dia in un_unr_limits_of_size.csv
 
 
 def _asme_dia_bounds_mm():

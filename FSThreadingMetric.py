@@ -256,8 +256,32 @@ def get_shank_dia(fa, dia_fallback):
     fa           : fastener attributes object
     dia_fallback : float  nominal mm — fallback + interpolation reference
     """
-    mp = getattr(fa, "Thread_Pitch",     None)
+    # ── Resolve pitch — never skip deviation ─────────────────────────────
+    # Priority:
+    #   1. Thread_Pitch property (user-selected from dashboard dropdown)
+    #   2. calc_pitch already resolved by FastenersCmd
+    #   3. Coarsest pitch from CSV for this diameter (always available)
+    # This ensures CSV lookup always has a valid pitch → deviation always fires.
+    mp = getattr(fa, "Thread_Pitch", None)
+    if not mp or not str(mp).strip():
+        # Fallback to calc_pitch
+        cp = getattr(fa, "calc_pitch", None)
+        if cp:
+            try:
+                mp = str(float(cp))
+            except Exception:
+                pass
+    if not mp or not str(mp).strip():
+        # Last resort: coarsest pitch from CSV
+        _dia_s = getattr(fa, "calc_diam", "") or ""
+        _std_p = valid_pitches_for_dia(_dia_s)
+        if _std_p:
+            mp = _std_p[0]
+
     mc = getattr(fa, "Thread_Class_ISO", None)
+    if not mc or not str(mc).strip():
+        mc = "6g"   # standard class default
+
     if mp and mc:
         try:
             val = mean_dia_from_table(

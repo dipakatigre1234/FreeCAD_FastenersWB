@@ -129,7 +129,6 @@ FSScrewCommandTable = {
     "ASMEB18.2.1.3":  (translate("FastenerCmd", "UNC Heavy hex bolts"), HexHeadGroup, ScrewParametersLC),
     "ASMEB18.2.1.6":  (translate("FastenerCmd", "UNC Hex head screws"), HexHeadGroup, ScrewParametersLC),
     "ASMEB18.2.1.7":  (translate("FastenerCmd", "UNC Heavy hex screws"), HexHeadGroup, ScrewParametersLC),
-
     "ASMEB18.2.1.8":  (translate("FastenerCmd", "UNC Hex head screws with flange"), HexHeadGroup, ScrewParametersLC),
     "ASMEB18.2.1.9":  (translate("FastenerCmd", "UNC External 6-Lobe (Torx) flanged screws"), HexHeadGroup, ScrewParametersLC),
     "DIN571":  (translate("FastenerCmd", "Hex head wood screw"), HexHeadGroup, ScrewParametersLC),
@@ -427,33 +426,23 @@ def _set_thread_props_visibility(fp, thread_on):
 
 
 def _set_thread_props_visibility_inner(fp, thread_on):
-    """Route visibility to the correct threading module.
-
-    ASME external thread (TThread)  → _vis_asme_external()
-    ASME nuts (TNutThread)          → metric-style: hide all ASME props
-    Metric (ISO/DIN/EN/GOST)        → FSThreadingMetric.set_metric_thread_visibility()
-    """
     params = FSGetParams(fp.Type)
     is_asme_type = str(fp.Type).startswith("ASME")
     has_ext      = "TThread"    in params
     has_nut      = "TNutThread" in params
 
     if is_asme_type and has_ext:
-        # External ASME thread — show full 5-property chain
         _vis_asme_external(fp, thread_on)
     elif is_asme_type and has_nut:
-        # ASME nut — hide all ASME thread props, show nothing extra
         for _p in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom",
                    "Thread_Class", "Thread_Length", "ThreadPitch"):
             if hasattr(fp, _p):
                 fp.setEditorMode(_p, 2)
     else:
-        # Metric
         _TM.set_metric_thread_visibility(fp, thread_on)
 
 
 def _update_metric_mean_dia(fp):
-    """Recompute MetricMeanDia from CSV and set read-only display field."""
     if not hasattr(fp, "MetricMeanDia"):
         return
     try:
@@ -469,29 +458,18 @@ def _update_metric_mean_dia(fp):
 
 
 def _vis_asme_external(fp, thread_on):
-    """Visibility for ALL ASME external-thread types (bolts, screws, set screws).
-    Shows same 5 properties:
-      Thread_Length → Thread_Type → Thread_TPI
-      → Thread_TPI_Custom (only if Custom) → Thread_Class
-    ThreadPitch always hidden.
-    """
     if hasattr(fp, "ThreadPitch"):
         fp.setEditorMode("ThreadPitch", 2)
-
     if hasattr(fp, "Thread_Length"):
         fp.setEditorMode("Thread_Length", 0 if thread_on else 2)
-
     if hasattr(fp, "Thread_Type"):
         fp.setEditorMode("Thread_Type", 0 if thread_on else 2)
-
     if hasattr(fp, "Thread_TPI"):
         fp.setEditorMode("Thread_TPI", 0 if thread_on else 2)
-
     _tpi_sel   = str(getattr(fp, "Thread_TPI", "") or "")
     _is_custom = thread_on and (_tpi_sel == "Custom")
     if hasattr(fp, "Thread_TPI_Custom"):
         fp.setEditorMode("Thread_TPI_Custom", 0 if _is_custom else 2)
-
     _tpi_ready = thread_on and bool(_tpi_sel)
     if hasattr(fp, "Thread_Class"):
         fp.setEditorMode("Thread_Class", 0 if _tpi_ready else 2)
@@ -539,16 +517,10 @@ class FSScrewObject(FSBaseObject):
                 key += attr + ":" + str(val) + "|"
         return key.rstrip("|")
 
-    # ─────────────────────────────────────────────────────────────────────
     def onChanged(self, fp, prop):
-        """React to property changes.
-        ASME external thread only: rebuilds TPI/Type/Class enums.
-        ASME nuts and metric: unchanged behaviour.
-        """
-
-        # ── Diameter change — ASME external thread types only ─────────────
-        if prop == "Diameter" and not _is_asme_external(fp)                 and not str(getattr(fp, "Type", "")).startswith("ASME")                 and hasattr(fp, "Thread_Pitch"):
-            # Metric: rebuild Thread_Pitch enum for new diameter
+        if prop == "Diameter" and not _is_asme_external(fp) \
+                and not str(getattr(fp, "Type", "")).startswith("ASME") \
+                and hasattr(fp, "Thread_Pitch"):
             _new_p = _TM.valid_pitches_for_dia(str(getattr(fp, "Diameter", "") or ""))
             if _new_p:
                 try:
@@ -557,7 +529,6 @@ class FSScrewObject(FSBaseObject):
                     fp.Thread_Pitch = _cur if _cur in _new_p else _new_p[0]
                 except Exception:
                     pass
-                # Reset class and mean dia for new pitch
                 _p0 = str(getattr(fp, "Thread_Pitch", "") or "")
                 _dia = str(getattr(fp, "Diameter", "") or "")
                 _new_cls = _TM.valid_classes_for_dia_pitch(_dia, _p0)
@@ -571,7 +542,6 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
-        # ── Thread_Pitch change — rebuild Thread_Class_ISO dropdown ─────────────
         if prop == "Thread_Pitch" and hasattr(fp, "Thread_Class_ISO"):
             _dia_m  = str(getattr(fp, "Diameter", "") or "")
             _p_m    = str(getattr(fp, "Thread_Pitch", "") or "")
@@ -587,16 +557,13 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
-        # ── Thread_Class_ISO change — refresh visibility ──────────────────────
         if prop == "Thread_Class_ISO":
             _set_thread_props_visibility(fp, hasattr(fp, "Thread") and bool(fp.Thread))
             FastenerBase.FSCache.clear()
             return
 
-        # ── Diameter change — ASME external thread types only ─────────────
         if prop == "Diameter" and _is_asme_external(fp):
             _d_nom = _TA.bolt_nominal(getattr(fp, "Diameter", "") or "")
-
             if hasattr(fp, "Thread_Type"):
                 _new_types = _TA.valid_thread2types_for_dia(_d_nom)
                 try:
@@ -605,7 +572,6 @@ class FSScrewObject(FSBaseObject):
                     fp.Thread_Type = _cur if _cur in _new_types else _new_types[0]
                 except Exception:
                     pass
-
             if hasattr(fp, "Thread_TPI"):
                 _d_tt   = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
                 _d_opts = _TA.tpi_enum_options(_d_nom, _d_tt)
@@ -616,16 +582,12 @@ class FSScrewObject(FSBaseObject):
                         next((x for x in _d_opts if x != "Custom"), "Custom")
                 except Exception:
                     pass
-
             FastenerBase.FSCache.clear()
             return
 
-        # ── Thread property changes — ASME external thread types only ─────
         if prop in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom", "Thread_Class") \
                 and hasattr(fp, prop) and _is_asme_external(fp):
-
             thread_on = hasattr(fp, "Thread") and bool(fp.Thread)
-
             if prop == "Thread_Type":
                 if hasattr(fp, "Thread_TPI"):
                     _nom  = _TA.bolt_nominal(getattr(fp, "Diameter", "") or "")
@@ -638,7 +600,6 @@ class FSScrewObject(FSBaseObject):
                             next((x for x in _opts if x != "Custom"), "Custom")
                     except Exception:
                         pass
-
             elif prop == "Thread_TPI":
                 _nom   = _TA.bolt_nominal(getattr(fp, "Diameter", "") or "")
                 _tt    = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
@@ -661,7 +622,6 @@ class FSScrewObject(FSBaseObject):
                                 else _cls_opts[0]
                         except Exception:
                             pass
-
             _set_thread_props_visibility(fp, thread_on)
             FastenerBase.FSCache.clear()
             return
@@ -674,8 +634,6 @@ class FSScrewObject(FSBaseObject):
                     or hasattr(fp, "Thread_Pitch")):
                 return
             thread_on = hasattr(fp, "Thread") and bool(fp.Thread)
-            # Ensure metric Thread_Pitch/Thread_Class_ISO exist before setting visibility
-            # (they may not exist on objects created before this update)
             _is_m = not str(getattr(fp, "Type", "")).startswith("ASME")
             if _is_m and "TPitch" in params and "TThread" in params:
                 _dia_oc = str(getattr(fp, "Diameter", "") or "")
@@ -686,7 +644,7 @@ class FSScrewObject(FSBaseObject):
                         translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                     ).Thread_Pitch = _pitches_oc
                     try:
-                        fp.Thread_Pitch = _pitches_oc[0]   # explicit string value
+                        fp.Thread_Pitch = _pitches_oc[0]
                     except Exception:
                         pass
                 if not hasattr(fp, "Thread_Class_ISO"):
@@ -699,17 +657,15 @@ class FSScrewObject(FSBaseObject):
                     _cls_oc = _TM.valid_classes_for_dia_pitch(_dia_oc, _p0_oc) or ["6g"]
                     fp.addProperty("App::PropertyEnumeration", "Thread_Class_ISO",
                         "Parameters",
-                        translate("FastenerCmd",
-                            "Thread_Class — ISO 965 (6g=standard)")
+                        translate("FastenerCmd", "Thread_Class — ISO 965 (6g=standard)")
                     ).Thread_Class_ISO = _cls_oc
                     try:
                         _def_oc = "6g" if "6g" in _cls_oc else _cls_oc[0]
-                        fp.Thread_Class_ISO = _def_oc   # explicit string value
+                        fp.Thread_Class_ISO = _def_oc
                     except Exception:
                         pass
             _set_thread_props_visibility(fp, thread_on)
 
-    # ─────────────────────────────────────────────────────────────────────
     def VerifyMissingAttrs(self, obj, type=None):
         self.updateProps(obj)
         self.InitBackupAttribs()
@@ -805,26 +761,19 @@ class FSScrewObject(FSBaseObject):
                 translate("FastenerCmd","Key size")).KeySize = \
                     screwMaker.GetAllKeySizes(type, diameter)
 
-        # ── Metric: ThreadPitch (legacy — hidden, replaced by Thread_Pitch) ──
         if "TPitch" in params and not hasattr(obj,"ThreadPitch"):
             obj.addProperty("App::PropertyLength","ThreadPitch","Parameters",
                 translate("FastenerCmd","Thread_Pitch legacy (hidden)")
             ).ThreadPitch = 0.0
-            obj.setEditorMode("ThreadPitch", 2)   # always hidden
+            obj.setEditorMode("ThreadPitch", 2)
 
-        # ── Thread_Length ─────────────────────────────────────────────────
         if "TLength" in params and not hasattr(obj,"Thread_Length"):
             obj.addProperty("App::PropertyLength","Thread_Length","Parameters",
                 translate("FastenerCmd","Thread_Length (mm). 0 = standard")
             ).Thread_Length = 0.0
             obj.setEditorMode("Thread_Length", 2)
 
-        # ── Metric: Thread_Pitch / Thread_Class_ISO / MetricMeanDia ──────────────
-        # These three replace ThreadPitch for metric fasteners.
-        # Populated data-driven from metric_thread_dia.csv via FSThreadingMetric.
         _this_type_early = str(type) if type else str(getattr(obj, "Type", ""))
-
-        # ── Thread_Root (metric external only — Flat or Round root profile) ──────
         _is_metric_ext = not _this_type_early.startswith("ASME") and "TThread" in params
         if _is_metric_ext and not hasattr(obj, "Thread_Root"):
             obj.addProperty("App::PropertyEnumeration", "Thread_Root", "Parameters",
@@ -835,29 +784,21 @@ class FSScrewObject(FSBaseObject):
                 obj.Thread_Root = "Flat"
             except Exception:
                 pass
-            obj.setEditorMode("Thread_Root", 0)   # always visible for metric
+            obj.setEditorMode("Thread_Root", 0)
 
         if "TPitch" in params and not _this_type_early.startswith("ASME"):
             _dia_v = str(getattr(obj, "Diameter", diameter) or "")
-
             if not hasattr(obj, "Thread_Pitch"):
                 _pitches = _TM.valid_pitches_for_dia(_dia_v) or ["1.0"]
                 obj.addProperty("App::PropertyEnumeration", "Thread_Pitch", "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_Pitch (mm) — from ISO 965 table")
+                    translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                 ).Thread_Pitch = _pitches
-                # MUST explicitly set string value — FreeCAD Enumeration property
-                # returns "" from getattr() until a string is assigned directly.
-                # Without this, _pitch_sel="" in set_metric_thread_visibility
-                # → _cls_ready=False → Thread_Class_ISO stays hidden.
                 try:
                     obj.Thread_Pitch = _pitches[0]
                 except Exception:
                     pass
-                obj.setEditorMode("Thread_Pitch", 2)   # hidden until Thread=true
-
+                obj.setEditorMode("Thread_Pitch", 2)
             if not hasattr(obj, "Thread_Class_ISO"):
-                # Read the actual string value (NOT getattr which may return "")
                 _p0 = ""
                 try:
                     _p0 = str(obj.Thread_Pitch)
@@ -866,41 +807,30 @@ class FSScrewObject(FSBaseObject):
                 _p0 = _p0 or "1.0"
                 _cls = _TM.valid_classes_for_dia_pitch(_dia_v, _p0) or ["6g"]
                 obj.addProperty("App::PropertyEnumeration", "Thread_Class_ISO", "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_Class — ISO 965 (6g=standard, 4h=tight)")
+                    translate("FastenerCmd", "Thread_Class — ISO 965 (6g=standard, 4h=tight)")
                 ).Thread_Class_ISO = _cls
-                # Explicitly set string value for same reason as Thread_Pitch
                 try:
                     _def_cls = "6g" if "6g" in _cls else _cls[0]
                     obj.Thread_Class_ISO = _def_cls
                 except Exception:
                     pass
-                obj.setEditorMode("Thread_Class_ISO", 2)   # hidden until pitch selected
+                obj.setEditorMode("Thread_Class_ISO", 2)
 
-            # MetricMeanDia not added as property — shown in console log only
-
-
-        # ── classify type ─────────────────────────────────────────────────
         _this_type   = str(type) if type else str(getattr(obj, "Type", ""))
         _is_asme_t   = _this_type.startswith("ASME")
-        _has_ext_t   = "TThread" in params       # external thread
-        _has_nut_t   = "TNutThread" in params    # internal / nut thread
+        _has_ext_t   = "TThread" in params
+        _has_nut_t   = "TNutThread" in params
 
-        # ── Thread_Type (ASME external only) ─────────────────────────────
         if "TType" in params and _is_asme_t and _has_ext_t \
                 and not hasattr(obj, "Thread_Type"):
             _nom_t    = _TA.bolt_nominal(getattr(obj, "Diameter", "") or "")
             _valid_tt = _TA.valid_thread2types_for_dia(_nom_t)
             obj.addProperty("App::PropertyEnumeration","Thread_Type","Parameters",
-                translate("FastenerCmd",
-                    "Thread_Type: UNC/UNF/UNEF/UN/UNR")
+                translate("FastenerCmd", "Thread_Type: UNC/UNF/UNEF/UN/UNR")
             ).Thread_Type = _valid_tt
             obj.setEditorMode("Thread_Type", 2)
 
-        # ── Thread_TPI / Thread_TPI_Custom / Thread_Class (ASME external only) ─
         if "TPitch" in params and _is_asme_t and _has_ext_t:
-
-            # Thread_TPI as Enumeration (replace old integer property if exists)
             if hasattr(obj, "Thread_TPI"):
                 _ok = False
                 try: _ok = "Enumeration" in obj.getTypeIdOfProperty("Thread_TPI")
@@ -908,41 +838,32 @@ class FSScrewObject(FSBaseObject):
                 if not _ok:
                     try: obj.removeProperty("Thread_TPI")
                     except Exception: pass
-
             if not hasattr(obj, "Thread_TPI"):
                 _snom  = _TA.bolt_nominal(getattr(obj, "Diameter", "") or "")
                 _stt   = str(getattr(obj, "Thread_Type", "UNC") or "UNC")
                 _sopts = _TA.tpi_enum_options(_snom, _stt)
                 obj.addProperty("App::PropertyEnumeration", "Thread_TPI", "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_TPI — from ASME B1.1 table or Custom")
+                    translate("FastenerCmd", "Thread_TPI — from ASME B1.1 table or Custom")
                 ).Thread_TPI = _sopts
                 try:
                     obj.Thread_TPI = next((x for x in _sopts if x != "Custom"), "Custom")
                 except Exception: pass
                 obj.setEditorMode("Thread_TPI", 2)
-
-            # Thread_TPI_Custom
             if not hasattr(obj, "Thread_TPI_Custom"):
                 obj.addProperty("App::PropertyInteger", "Thread_TPI_Custom", "Parameters",
                     translate("FastenerCmd", "Thread_TPI Custom value")
                 ).Thread_TPI_Custom = 0
                 obj.setEditorMode("Thread_TPI_Custom", 2)
-
-            # Thread_Class
             if not hasattr(obj, "Thread_Class"):
                 obj.addProperty("App::PropertyEnumeration", "Thread_Class", "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_Class: 2A=standard, 3A=tight")
+                    translate("FastenerCmd", "Thread_Class: 2A=standard, 3A=tight")
                 ).Thread_Class = ["2A", "3A"]
                 obj.setEditorMode("Thread_Class", 2)
 
-        # ── Initial visibility ────────────────────────────────────────────
         _hthread = _has_ext_t or _has_nut_t
         _ton     = (_hthread and hasattr(obj, "Thread") and bool(obj.Thread))
 
         if _is_asme_t and _has_ext_t:
-            # ASME external: show 5-property chain if thread on, hide all if off
             if _ton:
                 _vis_asme_external(obj, True)
             else:
@@ -951,13 +872,11 @@ class FSScrewObject(FSBaseObject):
                     if hasattr(obj, _p):
                         obj.setEditorMode(_p, 2)
         elif _is_asme_t and _has_nut_t:
-            # ASME nut: hide all thread props
             for _p in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom",
                        "Thread_Class", "Thread_Length", "ThreadPitch"):
                 if hasattr(obj, _p):
                     obj.setEditorMode(_p, 2)
         else:
-            # Metric
             _TM.set_metric_thread_visibility(obj, _ton)
 
         if "blindness" in params and not hasattr(obj,"Blind"):
@@ -968,8 +887,6 @@ class FSScrewObject(FSBaseObject):
                 translate("FastenerCmd","Threaded part length")).ScrewLength = \
                     screwMaker.GetThreadLength(type, diameter)
 
-        # ── Hide base props not needed in main dashboard ─────────────────
-        # Invert, Offset, OffsetAngle set by FSBaseObject (always present)
         for _hp in ("Invert", "LeftHanded", "MatchOuter", "Offset", "OffsetAngle"):
             if hasattr(obj, _hp):
                 obj.setEditorMode(_hp, 2)
@@ -1001,7 +918,6 @@ class FSScrewObject(FSBaseObject):
     def paramChanged(self, param, value):
         return getattr(self, param) != value
 
-    # ─────────────────────────────────────────────────────────────────────
     def execute(self, fp):
         try:
             baseobj = fp.BaseObject[0]
@@ -1012,7 +928,6 @@ class FSScrewObject(FSBaseObject):
 
         params = FSGetParams(fp.Type)
 
-        # ── Type change ───────────────────────────────────────────────────
         typechange = False
         if fp.Type != self.Type:
             typechange = True
@@ -1024,7 +939,6 @@ class FSScrewObject(FSBaseObject):
             fp.Diameter = diameters
             fp.Diameter = curdiam
 
-        # ── Diameter ──────────────────────────────────────────────────────
         if self.PitchCustom is not None and hasattr(fp,"PitchCustom") \
                 and str(fp.PitchCustom) != self.PitchCustom:
             fp.Diameter = "Custom"
@@ -1039,11 +953,10 @@ class FSScrewObject(FSBaseObject):
             fp.Diameter = self.calc_diam
             diameterchange = True
         elif fp.Diameter == "Custom" and hasattr(fp,"DiameterCustom"):
-            self.calc_diam = str(fp.DiameterCustom.Value)
+            self.calc_diam = str(fp.DiameterCustomi.Value)
         else:
             self.calc_diam = fp.Diameter
 
-        # ── Length ────────────────────────────────────────────────────────
         if hasattr(fp,"Length"):
             if "lengthArbitrary" in params:
                 l = screwMaker.GetTableProperty(fp.Type, fp.Diameter, "Length",
@@ -1112,14 +1025,10 @@ class FSScrewObject(FSBaseObject):
         thread_on = (("TThread" in params or "TNutThread" in params) and
                      hasattr(fp,"Thread") and bool(fp.Thread))
         asme_type = str(fp.Type).startswith("ASME")
-        has_ext   = "TThread" in params       # external thread only
+        has_ext   = "TThread" in params
 
-        # ── Pre-sync metric enums so visibility sees correct values ─────────
-        # Must happen BEFORE _set_thread_props_visibility, otherwise
-        # Thread_Pitch has no value → _pitch_sel="" → Thread_Class_ISO hidden.
         if thread_on and not asme_type:
             _dia_pre = str(fp.Diameter or "")
-            # Ensure properties exist (legacy objects may not have them)
             if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
                 _pp = _TM.valid_pitches_for_dia(_dia_pre) or ["1.0"]
                 fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
@@ -1133,7 +1042,6 @@ class FSScrewObject(FSBaseObject):
                     "Parameters",
                     translate("FastenerCmd", "Thread_Class — ISO 965 (6g=standard)")
                 ).Thread_Class_ISO = _cp
-            # Populate Thread_Pitch enum with current dia's pitches
             if hasattr(fp, "Thread_Pitch"):
                 _pp2 = _TM.valid_pitches_for_dia(_dia_pre)
                 if _pp2:
@@ -1143,7 +1051,6 @@ class FSScrewObject(FSBaseObject):
                         fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp2 else _pp2[0]
                     except Exception:
                         pass
-            # Populate Thread_Class_ISO enum for current pitch
             if hasattr(fp, "Thread_Class_ISO") and hasattr(fp, "Thread_Pitch"):
                 _pp3 = str(fp.Thread_Pitch or "")
                 _cp3 = _TM.valid_classes_for_dia_pitch(_dia_pre, _pp3)
@@ -1157,7 +1064,6 @@ class FSScrewObject(FSBaseObject):
 
         _set_thread_props_visibility(fp, thread_on)
 
-        # ── Resolve calc_tpi / calc_pitch — ASME external thread only ─────
         if thread_on and asme_type and has_ext:
             _nom     = _TA.bolt_nominal(fp.Diameter)
             _tt      = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
@@ -1175,7 +1081,6 @@ class FSScrewObject(FSBaseObject):
                 self.calc_tpi   = None
                 self.calc_pitch = None
 
-            # Sync Thread_Type enum
             if hasattr(fp, "Thread_Type"):
                 _t2_opts = _TA.valid_thread2types_for_dia(_nom)
                 try:
@@ -1185,7 +1090,6 @@ class FSScrewObject(FSBaseObject):
                     if _cur not in _t2_opts: _tt = _t2_opts[0]
                 except Exception: pass
 
-            # Sync Thread_TPI enum
             if hasattr(fp, "Thread_TPI"):
                 _tpi_opts = _TA.tpi_enum_options(_nom, _tt)
                 try:
@@ -1195,7 +1099,6 @@ class FSScrewObject(FSBaseObject):
                         next((x for x in _tpi_opts if x != "Custom"), "Custom")
                 except Exception: pass
 
-            # Sync Thread_Class enum
             _ser = _tt if _tt in ("UNC", "UNF", "UNEF") else "UN"
             if hasattr(fp, "Thread_Class"):
                 _vcls = _TA.all_classes_for_nominal(_nom) if _is_cust else \
@@ -1211,10 +1114,6 @@ class FSScrewObject(FSBaseObject):
             _set_thread_props_visibility(fp, True)
 
         elif thread_on and not asme_type:
-            # Metric: resolve pitch from Thread_Pitch dropdown (CSV-driven)
-            # then sync Thread_Class_ISO and MetricMeanDia
-
-            # Sync Thread_Pitch enum for current diameter
             if hasattr(fp, "Thread_Pitch"):
                 _dia_e   = str(fp.Diameter or "")
                 _new_p_e = _TM.valid_pitches_for_dia(_dia_e)
@@ -1226,7 +1125,6 @@ class FSScrewObject(FSBaseObject):
                     except Exception:
                         pass
 
-            # Sync Thread_Class_ISO enum for current (diameter, pitch)
             if hasattr(fp, "Thread_Class_ISO") and hasattr(fp, "Thread_Pitch"):
                 _p_e  = str(fp.Thread_Pitch or "")
                 _dia_e = str(fp.Diameter or "")
@@ -1239,7 +1137,6 @@ class FSScrewObject(FSBaseObject):
                     except Exception:
                         pass
 
-            # Resolve calc_pitch from Thread_Pitch
             _mp = str(getattr(fp, "Thread_Pitch", "") or "")
             if _mp:
                 try:
@@ -1247,101 +1144,190 @@ class FSScrewObject(FSBaseObject):
                 except ValueError:
                     pass
             if not self.calc_pitch:
-                # Legacy fallback: ThreadPitch override
                 if hasattr(fp, "ThreadPitch"):
                     v = fp.ThreadPitch.Value
                     if v > 0.0:
                         self.calc_pitch = v
 
-            # Store metric thread params on self for FsMake shape functions
             self.Thread_Pitch     = str(getattr(fp, "Thread_Pitch",     "") or "")
             self.Thread_Class_ISO = str(getattr(fp, "Thread_Class_ISO", "") or "6g")
-            # Thread_Root: Flat (standard) or Round (ISO 68-1 arc)
             self.Thread_Root      = str(getattr(fp, "Thread_Root",  "Flat") or "Flat")
 
             _set_thread_props_visibility(fp, True)
 
         elif thread_on and hasattr(fp, "ThreadPitch"):
-            # Legacy metric fallback (ThreadPitch only, no Thread_Pitch property)
             v = fp.ThreadPitch.Value
             if v > 0.0:
                 self.calc_pitch = v
 
-        # ── Thread length ─────────────────────────────────────────────────
-        # Thread_Length.Value = 0 → use standard (table) thread length
-        # Thread_Length.Value > 0 → use that custom mm value
         if thread_on and hasattr(fp, "Thread_Length"):
             is_nut = "TNutThread" in params and "TThread" not in params
             self.calc_thread_length = 0.0 if is_nut else fp.Thread_Length.Value
         else:
             self.calc_thread_length = 0.0
 
-        # ▼▼▼ ADD HERE ▼▼▼
-        # ── Console log: threading summary ───────────────────────────────
+        # ── Console log: full threading summary with deviation breakdown ──────
         if thread_on:
-            _log_dia    = self.calc_diam  or "?"
-            _log_len    = self.calc_len   or "?"
-            _log_tlen   = self.calc_thread_length if hasattr(self, "calc_thread_length") else 0.0
+            _log_dia  = self.calc_diam or "?"
+            _log_len  = self.calc_len  or "?"
+            _log_tlen = self.calc_thread_length \
+                        if hasattr(self, "calc_thread_length") else 0.0
+
+            # nominal mm — reference for interpolation
+            try:
+                _nom_mm = float(
+                    str(self.calc_diam).replace("mm", "").strip()
+                ) if self.calc_diam else 0.0
+            except Exception:
+                _nom_mm = 0.0
 
             if asme_type and has_ext:
-                _log_tpi    = self.calc_tpi   or "standard"
-                _log_pitch  = f"{self.calc_pitch:.4f}mm" if self.calc_pitch else "standard"
-                _log_cls    = self.Thread_Class  or "2A"
-                _log_type   = self.Thread_Type   or "UNC"
-                _log_tdia   = "?"
+                # ── ASME external thread ──────────────────────────────────
+                _log_tpi   = self.calc_tpi or "?"
+                _log_pitch = f"{self.calc_pitch:.5f} mm" \
+                             if self.calc_pitch else "standard"
+                _log_cls   = self.Thread_Class or "2A"
+                _log_type  = self.Thread_Type  or "UNC"
+                _log_series = _log_type if _log_type in ("UNC","UNF","UNEF") else "UN"
+
+                # raw CSV dia
+                _d_raw = None
                 try:
-                    _nom_log = _TA.bolt_nominal(self.calc_diam)
-                    _p_log   = _TA.resolve_thread_params(_nom_log, self)
-                    _log_tdia = f"{_p_log['outer_dia_mm']:.4f}mm" \
-                                if _p_log.get("outer_dia_mm") else "fallback"
+                    _nom_key = _TA.bolt_nominal(self.calc_diam)
+                    _d_raw   = _TA.outer_dia_mm(
+                        _nom_key, _log_series,
+                        float(_log_tpi) if str(_log_tpi).replace(".","").isdigit() else 0,
+                        _log_cls)
                 except Exception:
                     pass
 
+                # deviated d_eff
+                _d_eff = None
+                try:
+                    _d_eff = _TA.get_shank_dia(self, _nom_mm)
+                except Exception:
+                    pass
+
+                # deviation pct + mm
+                _pct = 0.0
+                _dev = 0.0
+                if _d_raw and _d_raw > 0 and _nom_mm > 0:
+                    try:
+                        from FSThreadingASME import \
+                            _interpolated_deviation_pct as _apct
+                        _pct = _apct(_nom_mm)
+                        _dev = _d_raw * _pct / 100.0
+                    except Exception:
+                        pass
+
+                _diff = (_nom_mm - _d_eff) if (_d_eff and _nom_mm) else 0.0
+
                 FreeCAD.Console.PrintMessage(
-                    f"\n{'─'*60}\n"
-                    f"[Thread] Type        : {fp.Type}\n"
-                    f"[Thread] Nominal Dia : {_log_dia}\n"
-                    f"[Thread] Thread Dia  : {_log_tdia}  (from ASME B1.1 limits table)\n"
-                    f"[Thread] Series/Type : {_log_type}\n"
-                    f"[Thread] Class       : {_log_cls}\n"
-                    f"[Thread] TPI         : {_log_tpi}\n"
-                    f"[Thread] Pitch       : {_log_pitch}\n"
-                    f"[Thread] Thread Len  : {_log_tlen:.2f}mm\n"
-                    f"[Thread] Total Len   : {_log_len}mm\n"
+                    f"\n{'═'*60}\n"
+                    f"  ASME THREAD PARAMETERS\n"
                     f"{'─'*60}\n"
+                    f"  Bolt type              : {fp.Type}\n"
+                    f"  Nominal diameter       : {_log_dia}  ({_nom_mm:.4f} mm)\n"
+                    f"  Thread type            : {_log_type}\n"
+                    f"  Series                 : {_log_series}\n"
+                    f"  TPI                    : {_log_tpi}\n"
+                    f"  Pitch                  : {_log_pitch}\n"
+                    f"  Class                  : {_log_cls}\n"
+                    f"{'─'*60}\n"
+                    f"  Thread_Outer_Dia (CSV) : "
+                    f"{f'{_d_raw:.5f} mm' if _d_raw else 'not found'}"
+                    f"  ← un_unr_limits_of_size.csv\n"
+                    f"  Deviation pct          : {_pct:.4f} %"
+                    f"  (interpolated for {_nom_mm:.4f} mm)\n"
+                    f"  Deviation mm           : {_dev:.5f} mm\n"
+                    f"  d_eff (body + cutter)  : "
+                    f"{f'{_d_eff:.5f} mm' if _d_eff else 'fallback = nominal'}"
+                    f"  ← used for shank + thread cutter\n"
+                    f"  Difference from nominal: "
+                    f"{_nom_mm:.4f} - "
+                    f"{f'{_d_eff:.4f}' if _d_eff else '?'}"
+                    f" = {_diff:.4f} mm smaller\n"
+                    f"{'─'*60}\n"
+                    f"  Thread length          : {_log_tlen:.3f} mm\n"
+                    f"  Total bolt length      : {_log_len} mm\n"
+                    f"{'═'*60}\n"
                 )
 
             else:
-                _log_pitch  = f"{self.calc_pitch:.4f}mm" if self.calc_pitch else "standard"
-                _log_tdia   = "?"
+                # ── Metric thread ─────────────────────────────────────────
+                _log_pitch = f"{self.calc_pitch:.5f} mm" \
+                             if self.calc_pitch else "standard"
+                _mp  = str(getattr(self, "Thread_Pitch",     "") or "")
+                _mc  = str(getattr(self, "Thread_Class_ISO", "") or "6g")
+                _root= str(getattr(self, "Thread_Root", "Flat") or "Flat")
+
+                # raw CSV dia
+                _d_raw = None
                 try:
-                    _P_log   = _TM.resolve_metric_pitch(self)
-                    _dia_log = float(str(self.calc_diam).replace("mm","").strip()) \
-                               if self.calc_diam else 0.0
-                    _log_tdia = f"{_dia_log - 0.15 * _P_log:.4f}mm"
+                    _d_raw = _TM.mean_dia_from_table(
+                        self.calc_diam,
+                        str(float(_mp)) if _mp else "",
+                        _mc)
                 except Exception:
                     pass
 
-                FreeCAD.Console.PrintMessage(
-                    f"\n{'─'*60}\n"
-                    f"[Thread] Type        : {fp.Type}\n"
-                    f"[Thread] Nominal Dia : {_log_dia}\n"
-                    f"[Thread] Thread Dia  : {_log_tdia}  (dia - 0.15*P)\n"
-                    f"[Thread] Pitch       : {_log_pitch}\n"
-                    f"[Thread] Thread Len  : {_log_tlen:.2f}mm\n"
-                    f"[Thread] Total Len   : {_log_len}mm\n"
-                    f"{'─'*60}\n"
-                )
-        # ▲▲▲ END ADD ▲▲▲
+                # deviated d_eff
+                _d_eff = None
+                try:
+                    _d_eff = _TM.get_shank_dia(self, _nom_mm)
+                except Exception:
+                    pass
 
-        # ── Store thread params for FsMake shape functions ────────────────
+                # deviation pct + mm
+                _pct = 0.0
+                _dev = 0.0
+                if _d_raw and _d_raw > 0 and _nom_mm > 0:
+                    try:
+                        from FSThreadingMetric import \
+                            _interpolated_deviation_pct as _mpct
+                        _pct = _mpct(_nom_mm)
+                        _dev = _d_raw * _pct / 100.0
+                    except Exception:
+                        pass
+
+                _diff = (_nom_mm - _d_eff) if (_d_eff and _nom_mm) else 0.0
+
+                FreeCAD.Console.PrintMessage(
+                    f"\n{'═'*60}\n"
+                    f"  METRIC THREAD PARAMETERS\n"
+                    f"{'─'*60}\n"
+                    f"  Bolt type              : {fp.Type}\n"
+                    f"  Nominal diameter       : {_log_dia}  ({_nom_mm:.4f} mm)\n"
+                    f"  Thread pitch           : {_mp} mm\n"
+                    f"  Class (ISO)            : {_mc}\n"
+                    f"  Root profile           : {_root}\n"
+                    f"  Resolved pitch         : {_log_pitch}\n"
+                    f"{'─'*60}\n"
+                    f"  Thread_Mean_Dia (CSV)  : "
+                    f"{f'{_d_raw:.5f} mm' if _d_raw else 'not found'}"
+                    f"  ← metric_thread_dia.csv\n"
+                    f"  Deviation pct          : {_pct:.4f} %"
+                    f"  (interpolated for {_nom_mm:.4f} mm)\n"
+                    f"  Deviation mm           : {_dev:.5f} mm\n"
+                    f"  d_eff (body + cutter)  : "
+                    f"{f'{_d_eff:.5f} mm' if _d_eff else 'fallback = nominal'}"
+                    f"  ← used for shank + thread cutter\n"
+                    f"  Difference from nominal: "
+                    f"{_nom_mm:.4f} - "
+                    f"{f'{_d_eff:.4f}' if _d_eff else '?'}"
+                    f" = {_diff:.4f} mm smaller\n"
+                    f"{'─'*60}\n"
+                    f"  Thread length          : {_log_tlen:.3f} mm\n"
+                    f"  Total bolt length      : {_log_len} mm\n"
+                    f"{'═'*60}\n"
+                )
+
         # ── Store thread params for FsMake shape functions ────────────────
         self.Thread_Type   = str(fp.Thread_Type)   if (thread_on and hasattr(fp, "Thread_Type"))  else "UNC"
         self.Thread_TPI    = str(fp.Thread_TPI)    if hasattr(fp, "Thread_TPI")                   else ""
-        self.Thread_TPI_Custom = int(fp.Thread_TPI_Custom) if hasattr(fp, "Thread_TPI_Custom")                else 0
+        self.Thread_TPI_Custom = int(fp.Thread_TPI_Custom) if hasattr(fp, "Thread_TPI_Custom")    else 0
         self.Thread_Class  = str(fp.Thread_Class)  if (thread_on and hasattr(fp, "Thread_Class")) else "2A"
         self.ThreadSeries  = ""
-        # Metric thread params (set also in the elif thread_on metric block above)
         if not hasattr(self, "Thread_Pitch"): self.Thread_Pitch = ""
         if not hasattr(self, "Thread_Class_ISO"): self.Thread_Class_ISO = "6g"
         if thread_on and not asme_type:
@@ -1359,7 +1345,6 @@ class FSScrewObject(FSBaseObject):
         else:
             FreeCAD.Console.PrintLog("Using cached object\n")
 
-        # Label
         dispDiam = self.CleanDecimals(self.calc_diam)
         label = dispDiam
         if hasattr(fp,"Length"):

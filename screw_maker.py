@@ -742,6 +742,12 @@ class Screw:
         return Part.Solid(recess)
 
     @staticmethod
+    def makeHexalobularrecess(
+            drive_size: str, depth: float, chamfer: bool) -> "Part.Shape":
+        """Lowercase alias for backward compatibility with older FsFunctions."""
+        return Screw.makeHexalobularRecess(drive_size, depth, chamfer)
+
+    @staticmethod
     def makeSlotRecess(width: float, depth: float, head_diameter: float) -> Part.Shape:
         """Create a Cutting tool to add a slot driving feature to a screw head
         Parameters:

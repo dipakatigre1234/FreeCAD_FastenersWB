@@ -33,17 +33,47 @@ def makeFlangedPanHeadScrew(self, fa):
     """Create a pan head screw with a flange.
 
     Supported types:
-    - DIN 967 cross recessed pan head Screw with collar
+    - DIN 967 cross recessed pan head screw with collar
+
+    Thread diameter formula (Dipak):
+      Metric : thread_dia = dia - 0.15 * P
     """
-    SType = fa.baseType
+    SType  = fa.baseType
     length = fa.calc_len
-    dia = self.getDia(fa.calc_diam, False)
+    dia    = self.getDia(fa.calc_diam, False)
+
+    # ── Unpack dimTable ───────────────────────────────────────────────────
     if SType == 'DIN967':
-        P, b, c, da, dk, r, k, rf, x, cT, mH, mZ = fa.dimTable
-        alpha = math.acos((rf - k + c) / rf)
+        P_tbl, b_tbl, c, da, dk, r, k, rf, x, cT, mH, mZ = fa.dimTable
+        alpha  = math.acos((rf - k + c) / rf)
         recess = self.makeHCrossRecess(cT, mH)
         recess.translate(Base.Vector(0.0, 0.0, k))
-    # lay out fastener profile
+    else:
+        raise NotImplementedError(f"Unknown fastener type: {SType}")
+
+    # ── Pitch override (ThreadPitch from dashboard) ───────────────────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    P = raw_pitch if (raw_pitch is not None and raw_pitch > 0.0) else P_tbl
+
+    # ── Thread length override (ThreadLength from dashboard) ──────────────
+    raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
+    b = min(float(raw_tlen), length) if raw_tlen > 0.0 else b_tbl
+
+    # ── Thread diameter: metric formula ──────────────────────────────────
+    # thread_dia = dia - 0.15 * P
+    thread_dia = dia - 0.15 * P
+    tr         = thread_dia / 2.0
+
+    FreeCAD.Console.PrintMessage(
+        f"[Dipak] Threading: dia={dia:.4f}mm, "
+        f"thread_dia={thread_dia:.4f}mm, P={P:.3f}mm, "
+        f"allowance={dia - thread_dia:.4f}mm, "
+        f"thread_length={b:.2f}mm\n"
+    )
+
+    # ── Revolve profile ───────────────────────────────────────────────────
+    # Head uses full dia. Arc ends at (dia/2, -r); step inward to tr at
+    # same z so the entire shaft is at thread_dia → volume changes correctly.
     fm = FastenerBase.FSFaceMaker()
     fm.AddPoint(0.0, k)
     fm.AddArc(
@@ -52,24 +82,29 @@ def makeFlangedPanHeadScrew(self, fa):
         rf * math.sin(alpha),
         c
     )
-    fm.AddPoint((dk) / 2.0, c)
-    fm.AddPoint((dk) / 2.0, 0.0)
+    fm.AddPoint(dk / 2.0,      c)
+    fm.AddPoint(dk / 2.0,      0.0)
     fm.AddPoint(dia / 2.0 + r, 0.0)
-    fm.AddArc2(0.0, -r, 90)
-    if length - r > b:  # partially threaded fastener
+    fm.AddArc2(0.0, -r, 90)             # ends at (dia/2, -r)
+    fm.AddPoint(tr, -r)                 # step in to thread radius at same z
+
+    if length - r > b:                  # partially threaded
         thread_length = b
         if not fa.Thread:
-            fm.AddPoint(dia / 2, -1 * (length - b))
+            fm.AddPoint(tr, -1 * (length - b))
     else:
         thread_length = length - r
-    fm.AddPoint(dia / 2, -length)
+
+    fm.AddPoint(tr,  -length)
     fm.AddPoint(0.0, -length)
+
     shape = self.RevolveZ(fm.GetFace())
     shape = shape.cut(recess)
+
+    # ── Thread cutter ─────────────────────────────────────────────────────
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(dia, P, thread_length)
-        thread_cutter.translate(
-            Base.Vector(0.0, 0.0, -1 * (length - thread_length))
-        )
+        thread_cutter = self.CreateBlindThreadCutter(thread_dia, P, thread_length)
+        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
         shape = shape.cut(thread_cutter)
+
     return shape

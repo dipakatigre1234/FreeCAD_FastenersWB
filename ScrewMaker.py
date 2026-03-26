@@ -301,8 +301,13 @@ screwTables = {
     "GN506": ("TSlot", "makeTSlot"),
     "GN507": ("TSlot", "makeTSlot"),
     "ASMEB18.2.1.1": ("Screw", "makeSquareBolt"),
-    "ASMEB18.2.1.6": ("Screw", "makeHexHeadBolt"),
+    "ASMEB18.2.1.2": ("Screw", "makeHexHeadBolt"),   # Hex Bolts (Table 2)
+    "ASMEB18.2.1.3": ("Screw", "makeHexHeadBolt"),   # Heavy Hex Bolts (Table 3)
+    "ASMEB18.2.1.6": ("Screw", "makeHexHeadBolt"),   # Hex Screws (Table 6)
+    "ASMEB18.2.1.7": ("Screw", "makeHexHeadBolt"),   # Heavy Hex Screws (Table 7)
+
     "ASMEB18.2.1.8": ("Screw", "makeHexHeadWithFlange"),
+    "ASMEB18.2.1.9": ("Screw", "makeLobeHeadScrew"),
     "ASMEB18.2.2.1A": ("Nut", "makeHexNut"),
     "ASMEB18.2.2.1B": ("Nut", "makeSquareNut"),
     "ASMEB18.2.2.2": ("Nut", "makeSquareNut"),

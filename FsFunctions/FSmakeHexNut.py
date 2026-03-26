@@ -39,10 +39,39 @@ def makeHexNut(self, fa):
     - ASME B18.2.2 machine screw, thin, and regular hexagon nuts
     - DIN 6334 3xD length hexagon nuts
     - ASME B18.2.2 coupling nuts
+
+    Thread diameter offsets (Dipak):
+      Metric (ISO/DIN): thread_dia = dia + 0.05 * P
+      ASME (inch):      thread_dia = dia + 0.05 / TPI
+      Custom pitch/TPI: overrides table value via fa.calc_pitch / fa.calc_tpi
     """
 
     SType = fa.baseType
-    dia = self.getDia(fa.calc_diam, True)
+
+    # ── Convert ASME inch string → mm (fallback when getDia KeyError) ─────────
+    def _asme_inch_to_mm(diam_str):
+        """Parse '2 1/8in', '1/4in', '1in' etc. → diameter in mm."""
+        s = str(diam_str).replace("in", "").strip()
+        if " " in s:
+            whole, frac = s.split(" ", 1)
+            n, d = frac.split("/")
+            return (float(whole) + float(n) / float(d)) * 25.4
+        elif "/" in s:
+            n, d = s.split("/")
+            return float(n) / float(d) * 25.4
+        else:
+            return float(s) * 25.4
+
+    try:
+        dia = self.getDia(fa.calc_diam, True)
+    except (KeyError, TypeError):
+        # Large ASME sizes (e.g. '2 1/8in') may not exist in DiaList
+        dia = _asme_inch_to_mm(fa.calc_diam)
+
+    # ── Detect ASME (inch) vs metric ─────────────────────────────────────────
+    is_asme = SType.startswith("ASME")
+
+    # ── Unpack dimension table ────────────────────────────────────────────────
     if SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, _, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
@@ -57,18 +86,43 @@ def makeHexNut(self, fa):
         P, da, m, s = fa.dimTable
     elif SType == "ASMEB18.2.2.13":
         TPI, F, H = fa.dimTable
-        P = 1 / TPI * 25.4
+        P = 1.0 / TPI * 25.4
         m = H * 25.4
         s = F * 25.4
         da = dia
-    da = self.getDia(da, True)
+
+    try:
+        da = self.getDia(da, True)
+    except (KeyError, TypeError):
+        da = float(da)   # da from CSV is already in mm for ASME nut types
+
+    # ── Apply custom pitch / TPI overrides from FastenersCmd ─────────────────
+    # fa.calc_pitch is set by FSScrewObject.execute() when the user overrides:
+    #   - metric: ThreadPitch (mm) > 0  → fa.calc_pitch = that value
+    #   - ASME  : ThreadTPI   (int) > 0 → fa.calc_pitch = 25.4/TPI,
+    #                                      fa.calc_tpi   = TPI
+    # For 'Custom' diameter rod types, calc_pitch may also carry a custom pitch.
+    if fa.calc_pitch is not None and fa.calc_pitch > 0.0:
+        P = fa.calc_pitch          # override table pitch (mm) for all types
+
+    # Derive TPI from current P for ASME clearance calculation.
+    # fa.calc_tpi is set only when the user has entered a TPI override;
+    # otherwise we derive it from the (possibly overridden) pitch.
+    if is_asme:
+        if fa.calc_tpi is not None and fa.calc_tpi > 0:
+            eff_tpi = fa.calc_tpi
+        else:
+            eff_tpi = 25.4 / P      # derive TPI from table / custom pitch
+
+    # ── Thread geometry constants ─────────────────────────────────────────────
     sqrt2_ = 1.0 / sqrt2
-    # needed for chamfer at nut top
+    # chamfer at nut top
     cham = s * (sqrt3 / 3 - 1 / 2) * math.tan(math.radians(22.5))
     H = P * cos30
     cham_i_delta = da / 2.0 - (dia / 2.0 - H * 5.0 / 8.0)
     cham_i = cham_i_delta * math.tan(math.radians(15.0))
-    # layout the nut profile, then create a revolved solid
+
+    # ── Nut body profile (revolved solid) ─────────────────────────────────────
     fm = FastenerBase.FSFaceMaker()
     fm.AddPoint(dia / 2.0 - H * 5.0 / 8.0, m - cham_i)
     fm.AddPoint(da / 2.0, m)
@@ -79,11 +133,22 @@ def makeHexNut(self, fa):
     fm.AddPoint(da / 2.0, 0.0)
     fm.AddPoint(dia / 2.0 - H * 5.0 / 8.0, 0.0 + cham_i)
     head = self.RevolveZ(fm.GetFace())
-    # create cutting tool for hexagon head
+
+    # ── Hexagon prism cut ─────────────────────────────────────────────────────
     extrude = self.makeHexPrism(s, m)
     nut = head.common(extrude)
-    # add modeled threads if necessary
+
+    # ── Modelled threads (inner thread cutter) ────────────────────────────────
     if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + P)
+        # Apply thread diameter clearance offset:
+        #   Metric (ISO/DIN/any non-ASME): thread_dia = dia + 0.05 * P
+        #   ASME (inch):                   thread_dia = dia + 0.05 / TPI
+        if is_asme:
+            thread_dia = dia + 0.05 / eff_tpi
+        else:
+            thread_dia = dia + 0.05 * P
+
+        thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
         nut = nut.cut(thread_cutter)
+
     return nut

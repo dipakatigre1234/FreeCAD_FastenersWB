@@ -130,17 +130,22 @@ def _dia_key(diam_str):
 # ── Dashboard query helpers ───────────────────────────────────────────────────
 
 def valid_pitches_for_dia(dia_str):
+    """Return only pitches that exist in metric_thread_dia.csv for this diameter.
+    Never returns a hardcoded fallback - empty list means dia not in CSV.
+    """
     key = _dia_key(dia_str)
-    pitches = sorted({k[1] for k in _metric_table() if k[0] == key}, key=float)
-    return pitches or ["1.0"]
+    return sorted({k[1] for k in _metric_table() if k[0] == key}, key=float)
 
 
 def valid_classes_for_dia_pitch(dia_str, pitch_str):
+    """Return only classes that exist in CSV for this (diameter, pitch) pair.
+    Never returns a hardcoded fallback - empty list means combo not in CSV.
+    """
     key_d = _dia_key(dia_str)
     key_p = str(pitch_str).strip()
-    classes = sorted({k[2] for k in _metric_table()
-                      if k[0] == key_d and k[1] == key_p})
-    return classes or ["6g"]
+    return sorted({k[2] for k in _metric_table()
+                   if k[0] == key_d and k[1] == key_p})
+
 
 
 def mean_dia_from_table(dia_str, pitch_str, cls):
@@ -159,7 +164,9 @@ def get_metric_options(dia_str):
 # ── Pitch resolver ────────────────────────────────────────────────────────────
 
 def resolve_metric_pitch(fa):
-    """Priority: Thread_Pitch > calc_pitch > coarse from CSV > 1.0"""
+    """Priority: Thread_Pitch > calc_pitch > coarsest from CSV.
+    Never returns a hardcoded 1.0 fallback.
+    """
     mp = getattr(fa, "Thread_Pitch", None)
     if mp:
         try:
@@ -176,13 +183,16 @@ def resolve_metric_pitch(fa):
                 return v
         except Exception:
             pass
+    # Coarsest pitch from CSV for this diameter (first = smallest = coarsest)
     pitches = valid_pitches_for_dia(getattr(fa, "calc_diam", "") or "")
     if pitches:
         try:
             return float(pitches[0])
         except Exception:
             pass
-    return 1.0
+    # Absolute last resort - derive from nominal if CSV has nothing
+    return None
+
 
 
 # ── Thread cutter geometry ────────────────────────────────────────────────────

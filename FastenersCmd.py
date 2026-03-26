@@ -686,7 +686,7 @@ class FSScrewObject(FSBaseObject):
             if _is_m and "TPitch" in params and "TThread" in params:
                 _dia_oc = str(getattr(fp, "Diameter", "") or "")
                 if not hasattr(fp, "Thread_Pitch"):
-                    _pitches_oc = _TM.valid_pitches_for_dia(_dia_oc) or ["1.0"]
+                    _pitches_oc = _TM.valid_pitches_for_dia(_dia_oc)
                     fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
                         "Parameters",
                         translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
@@ -837,7 +837,7 @@ class FSScrewObject(FSBaseObject):
         if "TPitch" in params and not _this_type_early.startswith("ASME"):
             _dia_v = str(getattr(obj, "Diameter", diameter) or "")
             if not hasattr(obj, "Thread_Pitch"):
-                _pitches = _TM.valid_pitches_for_dia(_dia_v) or ["1.0"]
+                _pitches = _TM.valid_pitches_for_dia(_dia_v)
                 obj.addProperty("App::PropertyEnumeration", "Thread_Pitch", "Parameters",
                     translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                 ).Thread_Pitch = _pitches
@@ -1078,7 +1078,7 @@ class FSScrewObject(FSBaseObject):
         if thread_on and not asme_type:
             _dia_pre = str(fp.Diameter or "")
             if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
-                _pp = _TM.valid_pitches_for_dia(_dia_pre) or ["1.0"]
+                _pp = _TM.valid_pitches_for_dia(_dia_pre)
                 fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
                     "Parameters",
                     translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")

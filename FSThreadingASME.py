@@ -173,13 +173,13 @@ def valid_tpis_for_series(nominal, series):
 
 
 def valid_thread2types_for_dia(nominal):
-    lims = _limits()
-    in_table = {k[2] for k in lims if k[0]==nominal}
-    order = ["UNC","UNF","UNEF","UN","UNR"]
-    result = [s for s in order if s in in_table]
-    # UN and UNR always available — they share pitches with UNC/UNF/UNEF
-    if "UN" not in result:
-        result += ["UN", "UNR"]
+    """Return only thread types that exist in the CSV for this diameter.
+    UN/UNR only shown if the CSV has explicit rows for them.
+    Never added unconditionally.
+    """
+    in_table = {k[2] for k in _limits() if k[0] == nominal}
+    order    = ["UNC", "UNF", "UNEF", "UN", "UNR"]
+    result   = [s for s in order if s in in_table]
     return result or ["UNC"]
 
 

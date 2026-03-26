@@ -604,14 +604,25 @@ class FSScrewObject(FSBaseObject):
                 _nom   = _TA.bolt_nominal(getattr(fp, "Diameter", "") or "")
                 _tt    = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
                 _tpi_s = str(getattr(fp, "Thread_TPI", "") or "")
-                _ser   = _tt if _tt in ("UNC", "UNF", "UNEF") else "UN"
+
+                # ── Mirror standard TPI into Thread_TPI_Custom ────────────
+                # Same pattern as Length / LengthCustom:
+                # whenever user picks a standard value, mirror it into Custom
+                # so Custom field always shows the last-selected standard value.
+                if _tpi_s != "Custom" and _tpi_s and hasattr(fp, "Thread_TPI_Custom"):
+                    try:
+                        fp.Thread_TPI_Custom = int(float(_tpi_s))
+                    except (ValueError, TypeError):
+                        pass
+
                 if hasattr(fp, "Thread_Class"):
                     if _tpi_s == "Custom":
                         _cls_opts = _TA.all_classes_for_nominal(_nom)
                     else:
                         try:
+                            _tpi_f = float(_tpi_s)
                             _cls_opts = _TA.valid_classes_for_series_tpi(
-                                            _nom, _ser, int(_tpi_s))
+                                            _nom, _tt, _tpi_f)
                         except (ValueError, TypeError):
                             _cls_opts = ["2A", "3A"]
                     if _cls_opts:
@@ -1098,11 +1109,20 @@ class FSScrewObject(FSBaseObject):
                     fp.Thread_TPI = _cur if _cur in _tpi_opts else \
                         next((x for x in _tpi_opts if x != "Custom"), "Custom")
                 except Exception: pass
+                # ── Mirror standard TPI into Thread_TPI_Custom ────────────
+                # Same pattern as Length/LengthCustom: standard selection
+                # always mirrors into Custom field so user sees current value.
+                try:
+                    _tpi_now = str(fp.Thread_TPI)
+                    if _tpi_now != "Custom" and hasattr(fp, "Thread_TPI_Custom"):
+                        fp.Thread_TPI_Custom = int(float(_tpi_now))
+                except Exception: pass
 
-            _ser = _tt if _tt in ("UNC", "UNF", "UNEF") else "UN"
+            # _tt is the actual Thread_Type string (UNC/UNF/UNEF/UN/UNR)
+            # valid_classes_for_series_tpi handles UN/UNR correctly
             if hasattr(fp, "Thread_Class"):
                 _vcls = _TA.all_classes_for_nominal(_nom) if _is_cust else \
-                        (_TA.valid_classes_for_series_tpi(_nom, _ser, _res_tpi)
+                        (_TA.valid_classes_for_series_tpi(_nom, _tt, _res_tpi)
                          if _res_tpi > 0 else ["2A", "3A"])
                 if _vcls:
                     try:

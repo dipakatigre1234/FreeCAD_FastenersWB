@@ -16,6 +16,21 @@
 #        → calls make_UN_thread_cutter, translates, cuts — returns new shape
 
 from screw_maker import *
+
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+
+
 import sys as _sys
 import os as _os
 
@@ -24,7 +39,6 @@ _wb_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if _wb_root not in _sys.path:
     _sys.path.insert(0, _wb_root)
 
-import FSThreadingASME as _T
 
 _V  = 0.632
 _RT = 0.090
@@ -75,14 +89,14 @@ def makeLobeHeadScrew(self, fa):
     dia = self.getDia(fa.calc_diam, False)
     L   = float(fa.calc_len) if fa.calc_len else 50.0
 
-    nominal = _T.bolt_nominal(fa.calc_diam)
+    nominal = _TA.bolt_nominal(fa.calc_diam)
 
     # ── Resolve thread parameters from FSThreadingASME ────────────────────
-    tp = _T.resolve_thread_params(nominal, fa)
-    is_unr   = tp["is_unr"]
-    P        = tp["pitch_mm"]
-    td       = tp["outer_dia_mm"] if tp["outer_dia_mm"] else dia
-    tr       = td / 2.0
+    # ── Resolve pitch and d_eff from threading module ─────────────────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    P  = float(raw_pitch) if (raw_pitch and float(raw_pitch) > 0) else (25.4 / round(25.4 / (dia * 0.08)))
+    d_eff = _TA.get_shank_dia(fa, dia)
+    tr    = d_eff / 2.0
 
     # ── Console log ───────────────────────────────────────────────────────
     try:
@@ -148,20 +162,13 @@ def makeLobeHeadScrew(self, fa):
     tl = b if (L - r) > b else (L - r)
     if (L - r) > b and not fa.Thread:
         f.AddPoint(tr, -(L - b))
-    f.AddPoint(tr, -L + dia/10.0)
-    f.AddPoint(dia * .4, -L)
+    f.AddPoint(tr, -L + d_eff/10.0)
+    f.AddPoint(d_eff * .4, -L)
     f.AddPoint(0, -L)
     shape = self.RevolveZ(f.GetFace()).fuse(slope).fuse(head)
 
     # ── Thread cut — fully delegated to FSThreadingASME ──────────────────
     if fa.Thread:
-        shape = _T.apply_asme_thread(
-            shape   = shape,
-            fa      = fa,
-            nominal = nominal,
-            body_dia= dia,
-            tl      = tl,
-            offset_z= -(L - tl),
-        )
+        shape = _TA.cut_thread(shape, fa, d_eff, tl, -(L - tl), P)
 
     return shape

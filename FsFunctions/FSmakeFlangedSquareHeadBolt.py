@@ -26,6 +26,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeFlangedSquareHeadBolt(self, fa):
     """Creates a screw with a chamfered square head and a cylindrical collar.
@@ -105,8 +113,17 @@ def makeFlangedSquareHeadBolt(self, fa):
 
     # ── Thread cutter ─────────────────────────────────────────────────────
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(thread_dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
-        shape = shape.cut(thread_cutter)
+
+        tl_cut   = thread_length
+
+        offset_z = -(length - thread_length)
+
+        if is_asme:
+
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+
+        else:
+
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
 
     return shape

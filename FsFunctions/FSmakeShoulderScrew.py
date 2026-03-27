@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeShoulderScrew(self, fa):
     """creates a screw with a cylindrical head and a round shoulder section
@@ -35,10 +43,13 @@ def makeShoulderScrew(self, fa):
     - ISO 7379 shoulder screws
     - ASMEB18.3.4 shoulder screws
     """
-    SType = fa.baseType
-    length = fa.calc_len
+    SType   = fa.baseType
+    length  = fa.calc_len
     P, d1, d3, l2, l3, SW = fa.dimTable
-    d2 = self.getDia(fa.calc_diam, False)
+    d2      = self.getDia(fa.calc_diam, False)
+    is_asme = SType.startswith("ASME")
+    # ── Effective shank diameter from threading module ────────────────────
+    d_eff   = _TA.get_shank_dia(fa, d2) if is_asme else _TM.get_shank_dia(fa, d2)
     l1 = length
     # define the fastener head and shoulder
     fm = FSFaceMaker()
@@ -61,6 +72,9 @@ def makeShoulderScrew(self, fa):
     screw = screw.cut(recess)
     # add modelled threads if needed
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(d2, P, l2)
-        screw = screw.cut(thread_cutter)
+        offset_z = 0.0  # shoulder screw thread starts at z=0
+        if is_asme:
+            screw = _TA.cut_thread(screw, fa, d_eff, l2, offset_z, P)
+        else:
+            screw = _TM.cut_thread(screw, fa, d_eff, l2, offset_z, P)
     return screw

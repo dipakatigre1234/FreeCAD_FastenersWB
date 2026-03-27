@@ -26,6 +26,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeRaisedCountersunkScrew(self, fa):
     """creates a countersunk (or 'flat-head') screw
@@ -35,9 +43,10 @@ def makeRaisedCountersunkScrew(self, fa):
     - ISO 7047 raised countersunk head screws with H cross recess
     - ISO 14584 raised countersunk head screws with hexalobular recess
     """
-    SType = fa.baseType
-    length = fa.calc_len
-    dia = self.getDia(fa.calc_diam, False)
+    SType   = fa.baseType
+    length  = fa.calc_len
+    dia     = self.getDia(fa.calc_diam, False)
+    is_asme = SType.startswith("ASME")
     if SType == "ISO2010":
         csk_angle = math.radians(90)
         P, _, b, dk_theo, dk_mean, _, n_min, r, t_mean, _ = fa.dimTable
@@ -91,6 +100,11 @@ def makeRaisedCountersunkScrew(self, fa):
         recess = self.makeHCrossRecess(cT, mH * 25.4)
         recess.translate(Base.Vector(0.0, 0.0, ht))                               
     # lay out fastener profile
+    # ── Effective shank diameter from threading module ────────────────────
+    raw_pitch  = getattr(fa, "calc_pitch", None)
+    d_eff      = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr         = d_eff / 2.0
+
     head_flat_ht = (dk_theo - dk_mean) / 2 / math.tan(csk_angle / 2)
     sharp_corner_ht = -1 * (
         head_flat_ht + (dk_mean - dia) / (2 * math.tan(csk_angle / 2))
@@ -98,14 +112,14 @@ def makeRaisedCountersunkScrew(self, fa):
     fillet_start_ht = sharp_corner_ht - r * math.tan(csk_angle / 4)
     fm = FSFaceMaker()
     fm.AddPoint(0.0, -length)
-    fm.AddPoint(dia / 2, -length)
+    fm.AddPoint(tr, -length)
     if length + fillet_start_ht > b:  # partially threaded fastener
         thread_length = b
         if not fa.Thread:
-            fm.AddPoint(dia / 2, -length + thread_length)
+            fm.AddPoint(tr, -length + thread_length)
     else:
         thread_length = length + fillet_start_ht
-    fm.AddPoint(dia / 2, fillet_start_ht)
+    fm.AddPoint(tr, fillet_start_ht)
     fm.AddArc2(r, 0.0, -math.degrees(csk_angle / 2))
     fm.AddPoint(dk_mean / 2, -head_flat_ht)
     fm.AddPoint(dk_mean / 2, 0.0)
@@ -118,7 +132,10 @@ def makeRaisedCountersunkScrew(self, fa):
     shape = self.RevolveZ(fm.GetFace())
     shape = shape.cut(recess)
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
-        shape = shape.cut(thread_cutter)
+        tl_cut   = thread_length
+        offset_z = -(length - thread_length)
+        if is_asme:
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+        else:
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
     return shape

@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeFlangedButtonHeadScrew(self, fa):
     """Create a button head cap screw with a rounded flange
@@ -60,20 +68,11 @@ def makeFlangedButtonHeadScrew(self, fa):
     raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
     b = min(float(raw_tlen), length) if raw_tlen > 0.0 else b_tbl
 
-    # ── Thread diameter ───────────────────────────────────────────────────
-    # ASME/inch : thread_dia = dia - 0.15 / TPI
-    # Metric    : thread_dia = dia - 0.15 * P
-    if is_asme:
-        tpi = getattr(fa, "calc_tpi", None)
-        if not tpi or tpi <= 0:
-            tpi = round(25.4 / P_tbl)
-        thread_dia = dia - (0.15 / tpi)
-        log_extra  = f"TPI={tpi}"
-    else:
-        thread_dia = dia - 0.15 * P
-        log_extra  = f"P={P:.3f}mm"
-
-    tr = thread_dia / 2.0
+    # ── Effective shank diameter from threading module CSV ───────────────
+    # Replaces formula-based thread_dia with CSV-lookup d_eff
+    d_eff      = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    thread_dia = d_eff   # keep thread_dia name for profile compatibility
+    tr         = d_eff / 2.0
 
     FreeCAD.Console.PrintMessage(
         f"[Dipak] Threading: dia={dia:.4f}mm, "
@@ -126,8 +125,17 @@ def makeFlangedButtonHeadScrew(self, fa):
 
     # ── Thread cutter ─────────────────────────────────────────────────────
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(thread_dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
-        shape = shape.cut(thread_cutter)
+
+        tl_cut   = thread_length
+
+        offset_z = -(length - thread_length)
+
+        if is_asme:
+
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+
+        else:
+
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
 
     return shape

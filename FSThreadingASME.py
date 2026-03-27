@@ -52,8 +52,8 @@ _CSV_ASME = _os.path.join(_CSV_DIR, "un_unr_limits_of_size.csv")
 #   2.5 in  (63.50 mm)  → 1.500 % subtracted
 #
 # ↓↓ Change only these two values — dia bounds are read from the CSV ↓↓
-DEVIATION_PCT_SMALL  = 0.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
-DEVIATION_PCT_LARGE  = 0.0   # % subtracted at the largest  dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_SMALL  = 2.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_LARGE  = 1.5    # % subtracted at the largest  dia in un_unr_limits_of_size.csv
 
 
 def _asme_dia_bounds_mm():
@@ -163,7 +163,7 @@ def valid_tpis_for_series(nominal, series):
     under a literal "UN" key.  Aggregate all series so the dropdown is never empty.
     For UNC/UNF/UNEF: use exact series match as before.
     """
-    if series in ("UN", "UNR"):
+    if series in ("UN", "UNR"):  # UNR shares UN rows in CSV
         raw = sorted({k[1] for k in _limits() if k[0] == nominal}, reverse=True)
     else:
         raw = sorted(
@@ -178,8 +178,13 @@ def valid_thread2types_for_dia(nominal):
     Never added unconditionally.
     """
     in_table = {k[2] for k in _limits() if k[0] == nominal}
-    order    = ["UNC", "UNF", "UNEF", "UN", "UNR"]
-    result   = [s for s in order if s in in_table]
+    # UNR has no CSV rows — it shares UN diameter/TPI data, round root only.
+    # Show UNR whenever UN is available for this diameter.
+    order  = ["UNC", "UNF", "UNEF", "UN"]
+    result = [s for s in order if s in in_table]
+    # Add UNR alongside UN if UN is available
+    if "UN" in result:
+        result.append("UNR")
     return result or ["UNC"]
 
 
@@ -195,7 +200,7 @@ def valid_classes_for_series_tpi(nominal, series, tpi):
     For UN/UNR: look across ALL stored series for that dia+tpi because rows are
     stored under UNC/UNF/UNEF series names in the CSV.
     """
-    if series in ("UN", "UNR"):
+    if series in ("UN", "UNR"):  # UNR shares UN rows in CSV
         classes = sorted({k[3] for k in _limits()
                           if k[0]==nominal and k[1]==float(tpi)})
     else:
@@ -270,7 +275,10 @@ def resolve_thread_params(nominal, fa):
     cls         = str(getattr(fa, "Thread_Class",      "2A") or "2A")
     calc_tpi    = getattr(fa, "calc_tpi",   None)
     calc_pitch  = getattr(fa, "calc_pitch", None)
-    is_unr      = (thread_type == "UNR")
+    # UNR = UN with round root. Thread_Type=="UNR" is the only signal.
+    # Thread_Root is not used for ASME — root is determined by thread_type alone.
+    is_unr = (thread_type == "UNR")
+    # series: UNC/UNF/UNEF use own CSV rows; UN and UNR both map to "UN"
     series = thread_type if thread_type in ("UNC","UNF","UNEF") else "UN"
 
     if tpi_sel == "Custom" and cust_tpi > 0:

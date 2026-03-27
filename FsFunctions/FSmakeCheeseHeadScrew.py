@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 
 def makeCheeseHeadScrew(self, fa):
@@ -37,9 +45,10 @@ def makeCheeseHeadScrew(self, fa):
     - ISO 7048 cross recessed screw
     - ISO 14580 Hexalobular socket cheese head screws
     """
-    SType = fa.baseType
-    length = fa.calc_len
-    dia = self.getDia(fa.calc_diam, False)
+    SType   = fa.baseType
+    length  = fa.calc_len
+    dia     = self.getDia(fa.calc_diam, False)
+    is_asme = SType.startswith("ASME")
     if SType == "ISO1207" or SType == "DIN84":
         P, a, b, dk, dk_mean, da, k, n_min, r, t_min, x = fa.dimTable
         r_fil = r * 2.0
@@ -57,6 +66,11 @@ def makeCheeseHeadScrew(self, fa):
         tt, k, A, t_min = FsData["ISO14580extra"][fa.calc_diam]
         r_fil = r * 2.0
         recess = self.makeHexalobularRecess(tt, t_min, True)
+    # ── Effective shank diameter from threading module ────────────────────
+    raw_pitch  = getattr(fa, "calc_pitch", None)
+    d_eff      = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr         = d_eff / 2.0
+
     head_taper_angle = math.radians(5)
     # lay out the fastener profile
     fm = FSFaceMaker()
@@ -69,24 +83,26 @@ def makeCheeseHeadScrew(self, fa):
     )
     fm.AddArc2(0.0, -r_fil, -90 + math.degrees(head_taper_angle))
     fm.AddPoint(dk / 2, 0.0)
-    fm.AddPoint(dia / 2 + r, 0.0)
+    fm.AddPoint(tr + r, 0.0)
     fm.AddArc2(0.0, -r, 90)
     if length - r > b:  # partially threaded fastener
         thread_length = b
         if not fa.Thread:
-            fm.AddPoint(dia / 2, -1 * (length - b))
+            fm.AddPoint(tr, -1 * (length - b))
     else:
         thread_length = length - r
-    fm.AddPoint(dia / 2, -length)
+    fm.AddPoint(tr,        -length + d_eff/10)
+    fm.AddPoint(d_eff*4/10, -length)
     fm.AddPoint(0.0, -length)
     screw = self.RevolveZ(fm.GetFace())
     # cut the driving feature, then add modelled threads if needed
     recess.translate(Base.Vector(0.0, 0.0, k))
     screw = screw.cut(recess)
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(
-            0.0, 0.0, -1 * (length - thread_length))
-        )
-        screw = screw.cut(thread_cutter)
+        tl_cut   = thread_length
+        offset_z = -(length - thread_length)
+        if is_asme:
+            screw = _TA.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
+        else:
+            screw = _TM.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
     return screw

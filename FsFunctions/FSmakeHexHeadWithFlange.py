@@ -61,14 +61,9 @@ def makeHexHeadWithFlange(self, fa):
     raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
     b = min(float(raw_tlen), length) if raw_tlen > 0.0 else b_tbl
 
-    # ── 3. Shaft radius for body profile ─────────────────────────────────
-    #   Uses minor diameter so the revolved solid sits at thread root.
-    #   Full thread geometry is cut later by the threading module.
-    if is_asme:
-        _tpi = getattr(fa, "calc_tpi", None) or round(25.4 / P_tbl)
-        tr = (dia - (0.15 / _tpi)) / 2.0
-    else:
-        tr = (dia - 0.15 * P_tbl) / 2.0
+    # ── 3. Effective shank diameter from threading module (CSV + deviation) ──
+    d_eff = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr    = d_eff / 2.0
 
     # ── 4. Head geometry constants ────────────────────────────────────────
     cham     = s * (2.0 / sqrt3 - 1.0) * math.sin(math.radians(25))
@@ -106,8 +101,8 @@ def makeHexHeadWithFlange(self, fa):
     # ── 6. BODY: flange + shaft revolve, fused to head ────────────────────
     fm.Reset()
     fm.AddPoint(0.0,         -length)
-    fm.AddPoint(dia * 4 / 10, -length)
-    fm.AddPoint(tr,           -length + dia / 10)   # tip taper
+    fm.AddPoint(d_eff * 4 / 10, -length)
+    fm.AddPoint(tr,              -length + d_eff / 10)   # tip taper
 
     if length - r1 > b:
         # partially threaded — draw unthreaded step only when Thread is off
@@ -129,9 +124,11 @@ def makeHexHeadWithFlange(self, fa):
 
     # ── 7. THREADING: single call — all logic inside threading module ─────
     if fa.Thread:
+        tl_cut   = b
+        offset_z = -(length - b)
         if is_asme:
-            shape = _TA.cut_thread(shape, fa, dia, length, P_tbl)
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P_tbl)
         else:
-            shape = _TM.cut_thread(shape, fa, dia, length, P_tbl)
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P_tbl)
 
     return shape

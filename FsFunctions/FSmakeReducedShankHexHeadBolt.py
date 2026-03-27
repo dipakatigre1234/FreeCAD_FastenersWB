@@ -28,6 +28,14 @@
 
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeReducedShankHexHeadBolt(self, fa):
     """Creates a bolt with a hexagonal head and a reduced shank
@@ -35,7 +43,12 @@ def makeReducedShankHexHeadBolt(self, fa):
     supported types:
     - ISO 4015 hexagon head bolts with reduced shank
     """
-    dia = self.getDia(fa.calc_diam, False)
+    dia     = self.getDia(fa.calc_diam, False)
+    is_asme = fa.baseType.startswith("ASME")
+    # ── Effective shank diameter from threading module ────────────────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    d_eff     = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr        = d_eff / 2.0
     length = fa.calc_len
     if fa.baseType == "ISO4015":
         P, b1, b2, c, _, _, dw, e, k, _, _, _, r, s, _, x = fa.dimTable
@@ -70,7 +83,7 @@ def makeReducedShankHexHeadBolt(self, fa):
         fm.AddPoint(dp / 2, -length + b + x)
         fm.AddPoint(dia / 2, -length + b)
         thread_length = b + x
-    fm.AddPoint(dia / 2, -length + dia / 10)
+    fm.AddPoint(tr, -length + d_eff / 10)
     fm.AddPoint(dia * 4 / 10, -length)
     fm.AddPoint(0.0, -length)
     shape = self.RevolveZ(fm.GetFace())
@@ -79,6 +92,13 @@ def makeReducedShankHexHeadBolt(self, fa):
     extrude.translate(Base.Vector(0.0, 0.0, -length - 1))
     shape = shape.common(extrude)
     if fa.Thread:
+        tl_cut   = thread_length
+        offset_z = -(length - thread_length)
+        if is_asme:
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+        else:
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+    if False:  # legacy block disabled
         thread_cutter = self.CreateBlindThreadCutter(dia, P, thread_length)
         thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
         shape = shape.cut(thread_cutter)

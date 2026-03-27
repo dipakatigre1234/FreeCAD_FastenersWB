@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makeRoundHeadScrew(self, fa):
     """Create a screw with a round head
@@ -108,8 +116,17 @@ def makeRoundHeadScrew(self, fa):
 
     # ── Thread cutter ─────────────────────────────────────────────────────
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(thread_dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
-        screw = screw.cut(thread_cutter)
+
+        tl_cut   = thread_length
+
+        offset_z = -(length - thread_length)
+
+        if is_asme:
+
+            screw = _TA.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
+
+        else:
+
+            screw = _TM.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
 
     return screw

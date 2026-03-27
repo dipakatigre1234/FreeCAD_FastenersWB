@@ -112,43 +112,10 @@ def makeCylinderHeadScrew(self, fa):
         # Standard: clamp b_tbl to (length - r) — fully threads short bolts
         b = min(b_tbl, max(length - r, 0.0))
 
-    # ── 4. Shank radius from table lookup (not formula) ───────────────────
-    #
-    #   ASME:   Thread_Outer_Dia from un_unr_limits_of_size.csv
-    #           _TA.outer_dia_mm(nominal, series, tpi, cls) → mm
-    #
-    #   Metric: Thread_Mean_Dia from metric_thread_dia.csv
-    #           _TM.mean_dia_from_table(dia_str, pitch_str, cls) → mm
-    #
-    #   Fallback: nominal dia / 2
-    tr = None
+    # ── 4. Effective shank diameter from threading module (CSV + deviation) ──
+    d_eff = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr    = d_eff / 2.0
 
-    if is_asme:
-        try:
-            _nom  = _TA.bolt_nominal(fa.calc_diam)
-            _tpi  = getattr(fa, "calc_tpi", None)
-            if not _tpi or _tpi <= 0:
-                _tpi = round(25.4 / P)
-            _tt   = str(getattr(fa, "Thread_Type",  "UNC") or "UNC")
-            _ser  = _tt if _tt in ("UNC", "UNF", "UNEF") else "UN"
-            _cls  = str(getattr(fa, "Thread_Class", "2A")  or "2A")
-            _od   = _TA.outer_dia_mm(_nom, _ser, _tpi, _cls)
-            if _od and _od > 0:
-                tr = _od / 2.0
-        except Exception:
-            pass
-    else:
-        try:
-            _p_str = str(getattr(fa, "Thread_Pitch",     "") or "")
-            _cls   = str(getattr(fa, "Thread_Class_ISO", "6g") or "6g")
-            _mean  = _TM.mean_dia_from_table(fa.calc_diam, _p_str, _cls)
-            if _mean and _mean > 0:
-                tr = _mean / 2.0
-        except Exception:
-            pass
-
-    if tr is None or tr <= 0:
-        tr = dia / 2.0   # fallback — nominal radius
 
     # ── 5. Console log ────────────────────────────────────────────────────
     try:
@@ -187,8 +154,8 @@ def makeCylinderHeadScrew(self, fa):
         if not fa.Thread:
             fm.AddPoint(tr, -1 * (length - b))
 
-    fm.AddPoint(tr,           -length + dia / 10)
-    fm.AddPoint(dia * 4 / 10, -length)
+    fm.AddPoint(tr,            -length + d_eff / 10)
+    fm.AddPoint(d_eff * 4 / 10, -length)
     fm.AddPoint(0.0,          -length)
 
     shape = self.RevolveZ(fm.GetFace())
@@ -199,9 +166,11 @@ def makeCylinderHeadScrew(self, fa):
 
     # ── 8. Threading — fully delegated to threading modules ───────────────
     if fa.Thread:
+        tl_cut   = b
+        offset_z = -(length - b)
         if is_asme:
-            shape = _TA.cut_thread(shape, fa, dia, length, P)
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
         else:
-            shape = _TM.cut_thread(shape, fa, dia, length, P)
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
 
     return shape

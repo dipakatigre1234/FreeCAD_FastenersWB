@@ -512,6 +512,7 @@ def _vis_asme_external(fp, thread_on):
         fp.setEditorMode("Thread_Class", 0 if _tpi_ready else 2)
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FSScrewObject
 # ─────────────────────────────────────────────────────────────────────────────
@@ -825,6 +826,8 @@ class FSScrewObject(FSBaseObject):
 
         _this_type_early = str(type) if type else str(getattr(obj, "Type", ""))
         _is_metric_ext = not _this_type_early.startswith("ASME") and "TThread" in params
+        _is_asme_ext   = _this_type_early.startswith("ASME") and "TThread" in params
+        # Thread_Root for metric (Flat=standard, Round=ISO68-1)
         if _is_metric_ext and not hasattr(obj, "Thread_Root"):
             obj.addProperty("App::PropertyEnumeration", "Thread_Root", "Parameters",
                 translate("FastenerCmd",
@@ -835,6 +838,7 @@ class FSScrewObject(FSBaseObject):
             except Exception:
                 pass
             obj.setEditorMode("Thread_Root", 0)
+
 
         if "TPitch" in params and not _this_type_early.startswith("ASME"):
             # Resolve actual diameter — "Auto" has no pitches so use AutoDiameter
@@ -1111,6 +1115,17 @@ class FSScrewObject(FSBaseObject):
         if thread_on and not asme_type:
             # Use calc_diam (already resolved from Auto) for CSV lookup
             _dia_pre = str(self.calc_diam or fp.Diameter or "")
+            # Add Thread_Root if missing (existing bolts from old docs)
+            if not hasattr(fp, "Thread_Root") and "TPitch" in params:
+                fp.addProperty("App::PropertyEnumeration", "Thread_Root",
+                    "Parameters",
+                    translate("FastenerCmd", "Thread_Root: Flat (ISO standard) or Round (ISO 68-1)")
+                ).Thread_Root = ["Flat", "Round"]
+                try:
+                    fp.Thread_Root = "Flat"
+                except Exception:
+                    pass
+                fp.setEditorMode("Thread_Root", 0)
 
             # ── Ensure Thread_Pitch property exists and has valid options ──
             # Always repopulate from CSV using resolved diameter

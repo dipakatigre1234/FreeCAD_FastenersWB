@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
+
 
 def makePanHeadScrew(self, fa):
     """Create a pan-head screw with a rounded top and cylindrical sides
@@ -35,9 +43,10 @@ def makePanHeadScrew(self, fa):
     -ISO 7045 Pan head screws with type H or type Z cross recess
     - ISO 14583 Hexalobular socket pan head screws
     """
-    SType = fa.baseType
-    length = fa.calc_len
-    dia = self.getDia(fa.calc_diam, False)
+    SType   = fa.baseType
+    length  = fa.calc_len
+    dia     = self.getDia(fa.calc_diam, False)
+    is_asme = SType.startswith("ASME")
     if SType == "ISO7045":
         P, a, b, dk_max, da, k, r, rf, x, cT, mH, mZ = \
             FsData["ISO7045def"][fa.calc_diam]
@@ -110,6 +119,12 @@ def makePanHeadScrew(self, fa):
         recess = self.makeHCrossRecess(cT, mH)
         recess.translate(Base.Vector(0.0, 0.0, k))
         
+    # ── Effective shank diameter from threading module ────────────────────
+    raw_pitch  = getattr(fa, "calc_pitch", None)
+    P          = float(raw_pitch) if (raw_pitch and float(raw_pitch) > 0) else P
+    d_eff      = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr         = d_eff / 2.0
+
     if SType.split("B18.6.3")[0] == "ASME":
         r = 0.25   # Not specified in ASME, assume 0.25mm
         b = 1.5*25.4    # Assume maximum threaded length of 1.5" per paragraph 2.4.1(b)
@@ -138,24 +153,28 @@ def makePanHeadScrew(self, fa):
         fm.AddArc(h_arc_x, h_arc_z, dk_max / 2.0, he)
         
     fm.AddPoint(dk_max / 2.0, 0.0)
-    fm.AddPoint(dia / 2 + r, 0.0)
+    fm.AddPoint(tr + r, 0.0)
     fm.AddArc2(0.0, -r, 90)
     
     if length - r > b:  # partially threaded fastener
         thread_length = b
         if not fa.Thread:
-            fm.AddPoint(dia / 2, -1 * (length - b))
+            fm.AddPoint(tr, -1 * (length - b))
     else:
         thread_length = length - r
 
-    fm.AddPoint(dia / 2, -length)
+    fm.AddPoint(tr,  -length + d_eff/10)
+    fm.AddPoint(d_eff*4/10, -length)
     fm.AddPoint(0.0, -length)
     shape = self.RevolveZ(fm.GetFace())
     shape = shape.cut(recess)
     
     if fa.Thread:
-        thread_cutter = self.CreateBlindThreadCutter(dia, P, thread_length)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, -1 * (length - thread_length)))
-        shape = shape.cut(thread_cutter)
+        tl_cut   = thread_length
+        offset_z = -(length - thread_length)
+        if is_asme:
+            shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
+        else:
+            shape = _TM.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P)
         
     return shape

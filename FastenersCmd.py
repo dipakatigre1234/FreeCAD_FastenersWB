@@ -631,10 +631,11 @@ class FSScrewObject(FSBaseObject):
                     _tt   = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
                     _opts = _TA.tpi_enum_options(_nom, _tt)
                     try:
-                        _cur = str(fp.Thread_TPI)
+                        _cur = str(fp.Thread_TPI)    # read BEFORE list assignment
                         fp.Thread_TPI = _opts
-                        fp.Thread_TPI = _cur if _cur in _opts else \
-                            next((x for x in _opts if x != "Custom"), "Custom")
+                        _restore = _cur if _cur in _opts else                             next((x for x in _opts if x != "Custom"), "Custom")
+                        if str(fp.Thread_TPI) != _restore:
+                            fp.Thread_TPI = _restore
                     except Exception:
                         pass
             elif prop == "Thread_TPI":
@@ -664,10 +665,11 @@ class FSScrewObject(FSBaseObject):
                             _cls_opts = ["2A", "3A"]
                     if _cls_opts:
                         try:
-                            _cur = str(fp.Thread_Class)
+                            _cur = str(fp.Thread_Class)  # read BEFORE list assignment
                             fp.Thread_Class = _cls_opts
-                            fp.Thread_Class = _cur if _cur in _cls_opts \
-                                else _cls_opts[0]
+                            _restore = _cur if _cur in _cls_opts else _cls_opts[0]
+                            if str(fp.Thread_Class) != _restore:
+                                fp.Thread_Class = _restore
                         except Exception:
                             pass
             _set_thread_props_visibility(fp, thread_on)
@@ -1184,30 +1186,30 @@ class FSScrewObject(FSBaseObject):
             if hasattr(fp, "Thread_Type"):
                 _t2_opts = _TA.valid_thread2types_for_dia(_nom)
                 try:
-                    _cur = str(fp.Thread_Type)
+                    _cur = str(fp.Thread_Type)      # read BEFORE list assignment
                     fp.Thread_Type = _t2_opts
-                    fp.Thread_Type = _cur if _cur in _t2_opts else _t2_opts[0]
+                    _restore = _cur if _cur in _t2_opts else _t2_opts[0]
+                    if str(fp.Thread_Type) != _restore:
+                        fp.Thread_Type = _restore
                     if _cur not in _t2_opts: _tt = _t2_opts[0]
                 except Exception: pass
 
             if hasattr(fp, "Thread_TPI"):
                 _tpi_opts = _TA.tpi_enum_options(_nom, _tt)
                 try:
-                    _cur = str(fp.Thread_TPI)
+                    _cur = str(fp.Thread_TPI)       # read BEFORE list assignment
                     fp.Thread_TPI = _tpi_opts
-                    # If current value is Custom with no custom TPI set (=0),
-                    # reset to first standard TPI so user sees a real value
+                    # FreeCAD resets enum to index 0 on list assign — restore
                     _cust_val = int(getattr(fp, "Thread_TPI_Custom", 0) or 0)
                     if _cur == "Custom" and _cust_val == 0:
-                        # Reset to first standard — same as Length defaulting to table value
                         _first = next((x for x in _tpi_opts if x != "Custom"), None)
-                        if _first:
-                            fp.Thread_TPI = _first
+                        _restore = _first or "Custom"
                     elif _cur in _tpi_opts:
-                        fp.Thread_TPI = _cur
+                        _restore = _cur
                     else:
-                        _first = next((x for x in _tpi_opts if x != "Custom"), "Custom")
-                        fp.Thread_TPI = _first
+                        _restore = next((x for x in _tpi_opts if x != "Custom"), "Custom")
+                    if str(fp.Thread_TPI) != _restore:
+                        fp.Thread_TPI = _restore
                 except Exception: pass
                 # ── Mirror standard TPI into Thread_TPI_Custom ────────────
                 # Same pattern as Length/LengthCustom: standard selection
@@ -1226,10 +1228,18 @@ class FSScrewObject(FSBaseObject):
                          if _res_tpi > 0 else ["2A", "3A"])
                 if _vcls:
                     try:
+                        # Read BEFORE assigning list — FreeCAD resets enum value
+                        # to index 0 when list is assigned, losing the user's selection
                         _cur = str(fp.Thread_Class)
                         fp.Thread_Class = _vcls
-                        fp.Thread_Class = _cur if _cur in _vcls else _vcls[0]
+                        # Restore user's selection (or first valid if not in new list)
+                        _restore = _cur if _cur in _vcls else _vcls[0]
+                        if str(fp.Thread_Class) != _restore:
+                            fp.Thread_Class = _restore
                     except Exception: pass
+            # ── Sync self.Thread_Class NOW (after fp is stable) ──────────────
+            # Must happen after the enum is set so self gets the correct value
+            self.Thread_Class = str(fp.Thread_Class) if hasattr(fp, "Thread_Class") else "2A" 
 
             _set_thread_props_visibility(fp, True)
 

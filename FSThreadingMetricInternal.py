@@ -316,37 +316,60 @@ def make_internal_thread_cutter(bore_dia, P, depth, root_round=False):
     trot = int(depth // P) + 2
     ht   = trot * P
 
-    # Profile: root at d2, crest at x_crest
-    # Mirror of external: root is the INNER edge, crest is the OUTER edge
+    # Internal thread profile — exact mirror of external cutter (FSThreadingMetric.py)
+    #
+    # External bolt:  crest at large radius (d2),  root inward  (x_root = d2 - 0.625H)
+    # Internal nut:   crest at small radius (d2),  root outward (x_crest = d2 + 0.625H)
+    #
+    # Crest of nut thread: bore wall (d2 = bore_dia/2) — always flat / truncated
+    # Root  of nut thread: into material (x_crest)     — flat or rounded
+    #
+    # Profile points (same sequence as external, radii mirrored):
+    #   near crest bottom → flank outward → root (arc or flat) → flank inward → near crest top
+    #
+    h_root = P / 8.0
+
     fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P,  -0.475 * P)   # bottom root flat
+    fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P, -0.475 * P)   # crest flat bottom
+    fm.AddPoint(x_crest,                      -h_root)       # flank → root bottom
     if root_round:
-        # Rounded root at inner bore edge
-        fm.AddArc(d2 - 0.5 * 0.125 * P, 0, d2 - _sqrt3 * 3 / 80.0 * P, 0.475 * P)
+        # Rounded root outward into nut material — prevents stress concentration
+        fm.AddArc(x_crest + 0.5 * 0.125 * P, 0, x_crest, h_root)
     else:
-        fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P,  0.0)
-        fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P,  0.475 * P)   # top root flat
-    fm.AddPoint(x_crest,  0.475 * P)   # crest top
-    fm.AddPoint(x_crest, -0.475 * P)   # crest bottom
+        fm.AddPoint(x_crest, h_root)                         # flat root top
+    fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P,  0.475 * P)   # crest flat top
 
     wire = fm.GetClosedWire()
     wire.translate(Base.Vector(0, 0, -ht - P * 0.6))
 
-    helix      = Part.makeLongHelix(P, ht, bore_dia / 2.0, 0, False)
-    lead_helix = Part.makeLongHelix(P, P / 2.0, bore_dia / 2.0 - 0.1 * P, 0, False)
-    lead_helix.translate(Base.Vector(0.1 * P, 0, 0))
+    # Helix at bore wall radius (d2 = crest) — mirrors external helix at crest
+    depth      = 0.625 * H
+    helix      = Part.makeLongHelix(P, ht, d2, 0, False)
+    lead_helix = Part.makeLongHelix(P, P / 2.0, d2 - 0.55 * depth, 0, False)
+    lead_helix.translate(Base.Vector(0.55 * depth, 0, 0))
 
     path  = Part.Wire([helix, lead_helix])
     sweep = Part.BRepOffsetAPI.MakePipeShell(path)
     sweep.setFrenetMode(True)
     sweep.setTransitionMode(1)
     sweep.add(wire)
-    if sweep.isReady():
-        sweep.build()
-    else:
-        raise RuntimeError("[FSThreadingMetricInternal] sweep failed")
-    sweep.makeSolid()
-    return sweep.shape()
+    if not sweep.isReady():
+        raise RuntimeError("[FSThreadingMetricInternal] sweep not ready")
+    sweep.build()
+    shell = sweep.shape()
+    # makeSolid() on the sweep object can fail with open shells.
+    # Use Part.makeSolid() on the shell directly — more robust.
+    try:
+        solid = Part.makeSolid(shell)
+    except Exception:
+        sewed = Part.Shell(shell.Faces)
+        solid = Part.makeSolid(sewed)
+    # Clip to a box — same as external cutter — removes open ends cleanly
+    # Box must be larger than the cutter solid
+    box_r = x_crest + P
+    box   = Part.makeBox(2 * box_r, 2 * box_r, bore_dia + 2 * P,
+                         Base.Vector(-box_r, -box_r, -ht - P))
+    return solid.common(box)
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────

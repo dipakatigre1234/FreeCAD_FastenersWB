@@ -52,8 +52,8 @@ _CSV_ASME = _os.path.join(_CSV_DIR, "un_unr_limits_of_size.csv")
 #   2.5 in  (63.50 mm)  → 1.500 % subtracted
 #
 # ↓↓ Change only these two values — dia bounds are read from the CSV ↓↓
-DEVIATION_PCT_SMALL  = 2.0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
-DEVIATION_PCT_LARGE  = 1.5    # % subtracted at the largest  dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_SMALL  = 0    # % subtracted at the smallest dia in un_unr_limits_of_size.csv
+DEVIATION_PCT_LARGE  = 0    # % subtracted at the largest  dia in un_unr_limits_of_size.csv
 
 
 def _asme_dia_bounds_mm():
@@ -235,9 +235,40 @@ def get_all_options(nominal):
 def outer_dia_mm(nominal, series, tpi, cls):
     """Raw Thread_Outer_Dia mm from CSV — NO deviation applied.
     Use get_shank_dia() for the deviated effective diameter.
+
+    Series fallback: UN/UNR have no rows for coarser pitches — those are stored
+    under UNC/UNF/UNEF. If lookup fails, try same TPI under other series.
     """
     val = _limits().get((str(nominal), float(tpi), str(series), str(cls)))
-    return val * 25.4 if val is not None else None
+    if val is not None:
+        return val * 25.4
+    # Series fallback — try same TPI under standard series
+    for _fb_series in ("UNC", "UNF", "UNEF", "UN"):
+        if _fb_series == series:
+            continue
+        val = _limits().get((str(nominal), float(tpi), _fb_series, str(cls)))
+        if val is not None:
+            return val * 25.4
+    return None
+
+
+def nearest_tpi_in_csv(nominal, series):
+    """Return sorted list of all TPIs in CSV for this nominal across all series.
+    Used for custom TPI diameter lookup — find nearest standard TPI.
+    """
+    # Collect all TPIs for this nominal across all series
+    all_tpis = sorted({k[1] for k in _limits() if k[0] == nominal})
+    return all_tpis
+
+
+def nearest_tpi(custom_tpi, nominal, series):
+    """Find the nearest standard TPI in CSV to the given custom TPI.
+    Used ONLY for diameter lookup — thread geometry still uses custom_tpi.
+    """
+    candidates = nearest_tpi_in_csv(nominal, series)
+    if not candidates:
+        return custom_tpi
+    return min(candidates, key=lambda t: abs(t - float(custom_tpi)))
 
 
 def thread_dia_limits_asme(nominal_mm, P_mm, cls,
@@ -396,7 +427,21 @@ def get_shank_dia(fa, dia_fallback):
     series  = params["series"]
     cls     = params["cls"]
 
-    d = outer_dia_mm(nominal, series, float(tpi), cls) if (nominal and tpi > 0) else None
+    if not nominal or tpi <= 0:
+        return dia_fallback
+
+    # Check if this is a custom TPI (not in CSV as an exact row)
+    _is_cust_tpi = str(getattr(fa, "Thread_TPI", "")) == "Custom"
+
+    if _is_cust_tpi:
+        # Custom TPI: find nearest standard TPI for diameter lookup
+        # Thread geometry (pitch/helix) uses actual custom TPI from calc_pitch
+        _near = nearest_tpi(tpi, nominal, series)
+        d = outer_dia_mm(nominal, series, _near, cls)
+    else:
+        # Standard TPI: exact CSV lookup with series fallback
+        d = outer_dia_mm(nominal, series, float(tpi), cls)
+
     if not d or d <= 0:
         return dia_fallback
 
@@ -437,7 +482,12 @@ def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
 
     # console log — all values guarded against None
     try:
-        _d_raw = outer_dia_mm(nominal, series, float(tpi), cls) if (nominal and tpi > 0) else dia
+        _is_cust_tpi_log = str(getattr(fa, "Thread_TPI", "")) == "Custom"
+        if _is_cust_tpi_log and nominal and tpi > 0:
+            _near_log = nearest_tpi(tpi, nominal, series)
+            _d_raw = outer_dia_mm(nominal, series, _near_log, cls)
+        else:
+            _d_raw = outer_dia_mm(nominal, series, float(tpi), cls) if (nominal and tpi > 0) else dia
         _d_raw = _d_raw if _d_raw is not None else dia
         _pct   = _interpolated_deviation_pct(float(dia)) if (dia and float(dia) > 0) else 0.0
         _dev   = (_d_raw * _pct / 100.0) if (_d_raw and _d_raw > 0) else 0.0

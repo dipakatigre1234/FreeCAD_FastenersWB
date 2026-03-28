@@ -27,6 +27,14 @@
 """
 from screw_maker import *
 import FastenerBase
+import sys as _sys_nut, os as _os_nut
+_wb_nut = _os_nut.path.dirname(_os_nut.path.dirname(_os_nut.path.abspath(__file__)))
+if _wb_nut not in _sys_nut.path:
+    _sys_nut.path.insert(0, _wb_nut)
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
 
 
 def makeHexNut(self, fa):
@@ -96,42 +104,80 @@ def makeHexNut(self, fa):
     except (KeyError, TypeError):
         da = float(da)   # da from CSV is already in mm for ASME nut types
 
-    # ── Apply custom pitch / TPI overrides from FastenersCmd ─────────────────
-    # fa.calc_pitch is set by FSScrewObject.execute() when the user overrides:
-    #   - metric: ThreadPitch (mm) > 0  → fa.calc_pitch = that value
-    #   - ASME  : ThreadTPI   (int) > 0 → fa.calc_pitch = 25.4/TPI,
-    #                                      fa.calc_tpi   = TPI
-    # For 'Custom' diameter rod types, calc_pitch may also carry a custom pitch.
-    if fa.calc_pitch is not None and fa.calc_pitch > 0.0:
-        P = fa.calc_pitch          # override table pitch (mm) for all types
-
-    # Derive TPI from current P for ASME clearance calculation.
-    # fa.calc_tpi is set only when the user has entered a TPI override;
-    # otherwise we derive it from the (possibly overridden) pitch.
-    if is_asme:
-        if fa.calc_tpi is not None and fa.calc_tpi > 0:
-            eff_tpi = fa.calc_tpi
-        else:
-            eff_tpi = 25.4 / P      # derive TPI from table / custom pitch
+    # ── Resolve pitch — metric nut ALWAYS uses Thread_Pitch_Nut from CSV ────────
+    #
+    # dimTable P is DISCARDED for metric nuts — it is the bolt/standard table
+    # pitch and is not relevant to the internal thread the user selected.
+    #
+    # Source priority for metric nut:
+    #   1. Thread_Pitch_Nut  — user picked from metric_internal_thread_dia.csv
+    #   2. fa.calc_pitch     — custom pitch override (rare)
+    # dimTable P is NOT used as fallback for metric nut pitch.
+    #
+    # For ASME nuts: keep original P from dimTable + calc_pitch/TPI override.
+    #
+    if not is_asme and _TMI is not None:
+        _p_nut_s = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+        if _p_nut_s:
+            try:
+                P = float(_p_nut_s)          # ← Thread_Pitch_Nut from CSV wins
+            except Exception:
+                pass
+        elif fa.calc_pitch is not None and fa.calc_pitch > 0.0:
+            P = fa.calc_pitch                # ← custom pitch fallback
+        # dimTable P intentionally NOT used here
+    else:
+        # ASME: keep dimTable P, apply calc_pitch override if set
+        if fa.calc_pitch is not None and fa.calc_pitch > 0.0:
+            P = fa.calc_pitch
+        if is_asme:
+            if fa.calc_tpi is not None and fa.calc_tpi > 0:
+                eff_tpi = fa.calc_tpi
+            else:
+                eff_tpi = 25.4 / P
 
     # ── Thread geometry constants ─────────────────────────────────────────────
     sqrt2_ = 1.0 / sqrt2
     # chamfer at nut top
     cham = s * (sqrt3 / 3 - 1 / 2) * math.tan(math.radians(22.5))
     H = P * cos30
-    cham_i_delta = da / 2.0 - (dia / 2.0 - H * 5.0 / 8.0)
+
+    # ── Bore radius from CSV D1max + deviation ───────────────────────────────
+    # Metric nuts: use D1max from metric_internal_thread_dia.csv
+    # ASME nuts:   keep original major-based formula (no internal CSV yet)
+    _bore_r = None
+    if not is_asme and _TMI is not None:
+        try:
+            _dia_s  = str(getattr(fa, "calc_diam", "") or "")
+            _p_s    = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+            _cls_s  = str(getattr(fa, "Thread_Class_Nut", "") or "6H")
+            if not _p_s:
+                # Resolve pitch from fa (calc_pitch or coarsest)
+                _p_mm = _TMI.resolve_nut_pitch(fa)
+                _p_s  = str(_p_mm) if _p_mm else ""
+            if _p_s:
+                _bore_eff = _TMI.bore_dia_from_table(fa, _dia_s, _p_s, _cls_s)
+                _bore_r   = _bore_eff / 2.0
+        except Exception:
+            _bore_r = None
+
+    if _bore_r is None:
+        # Fallback: original ISO formula for bore (minor diameter)
+        _bore_r = dia / 2.0 - H * 5.0 / 8.0
+
+    cham_i_delta = da / 2.0 - _bore_r
     cham_i = cham_i_delta * math.tan(math.radians(15.0))
 
     # ── Nut body profile (revolved solid) ─────────────────────────────────────
     fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(dia / 2.0 - H * 5.0 / 8.0, m - cham_i)
+    fm.AddPoint(_bore_r, m - cham_i)
     fm.AddPoint(da / 2.0, m)
     fm.AddPoint(s / 2.0, m)
     fm.AddPoint(s / sqrt3, m - cham)
     fm.AddPoint(s / sqrt3, cham)
     fm.AddPoint(s / 2.0, 0.0)
     fm.AddPoint(da / 2.0, 0.0)
-    fm.AddPoint(dia / 2.0 - H * 5.0 / 8.0, 0.0 + cham_i)
+    fm.AddPoint(_bore_r, 0.0 + cham_i)
     head = self.RevolveZ(fm.GetFace())
 
     # ── Hexagon prism cut ─────────────────────────────────────────────────────
@@ -139,15 +185,25 @@ def makeHexNut(self, fa):
     nut = head.common(extrude)
 
     # ── Modelled threads (inner thread cutter) ────────────────────────────────
+    #
+    # Body bore wall is already at D1max (minor dia) from the revolve profile.
+    # Thread cutter runs from major dia inward — uses proven CreateInnerThreadCutter.
+    #
+    # Why NOT use make_internal_thread_cutter from _TMI:
+    #   That function places the helix at bore_dia/2 (minor dia) which is the
+    #   wrong radius — the helix must run at the major dia side (nominal/2).
+    #   CreateInnerThreadCutter already does this correctly.
+    #
+    # Flow:
+    #   bore wall = D1max/2  (set in revolve profile above)  ← from CSV
+    #   cutter OD = dia + 0.05×P  (just above major dia)     ← proven
+    #   cutter cuts from major inward → creates thread form between D1max and major
+    #
     if fa.Thread:
-        # Apply thread diameter clearance offset:
-        #   Metric (ISO/DIN/any non-ASME): thread_dia = dia + 0.05 * P
-        #   ASME (inch):                   thread_dia = dia + 0.05 / TPI
         if is_asme:
             thread_dia = dia + 0.05 / eff_tpi
         else:
             thread_dia = dia + 0.05 * P
-
         thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
         nut = nut.cut(thread_cutter)
 

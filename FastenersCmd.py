@@ -32,6 +32,10 @@ if _wb_root not in _sys.path:
 
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
 
 # ── Compatibility shim ────────────────────────────────────────────────────────
 # Guard against older FSThreadingASME that may not export bolt_nominal.
@@ -135,7 +139,8 @@ FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Le
                    'Thread_Class', 'Thread_TPI', 'Thread_TPI_Custom',
                    # Metric data-driven thread properties (metric_thread_dia.csv)
                    'Thread_Pitch', 'Thread_Class_ISO',
-                   'Thread_Root']
+                   'Thread_Root',
+                   'Thread_Pitch_Nut', 'Thread_Class_Nut']
 
 HexHeadGroup        = translate("FastenerCmd", "Hex head")
 HexagonSocketGroup  = translate("FastenerCmd", "Hexagon socket")
@@ -467,16 +472,43 @@ def _set_thread_props_visibility_inner(fp, thread_on):
     is_asme_type = str(fp.Type).startswith("ASME")
     has_ext      = "TThread"    in params
     has_nut      = "TNutThread" in params
+    is_metric_nut = has_nut and not is_asme_type
 
     if is_asme_type and has_ext:
+        # ASME bolt — show ASME bolt props, hide all metric + nut props
         _vis_asme_external(fp, thread_on)
-    elif is_asme_type and has_nut:
-        for _p in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom",
-                   "Thread_Class", "Thread_Length", "ThreadPitch"):
+        for _p in ("Thread_Pitch", "Thread_Class_ISO",
+                   "Thread_Pitch_Nut", "Thread_Class_Nut", "Thread_Root"):
             if hasattr(fp, _p):
                 fp.setEditorMode(_p, 2)
+
+    elif is_asme_type and has_nut:
+        # ASME nut — hide all bolt props
+        for _p in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom",
+                   "Thread_Class", "Thread_Length", "ThreadPitch",
+                   "Thread_Pitch", "Thread_Class_ISO",
+                   "Thread_Pitch_Nut", "Thread_Class_Nut", "Thread_Root"):
+            if hasattr(fp, _p):
+                fp.setEditorMode(_p, 2)
+
+    elif is_metric_nut:
+        # Metric nut — show ONLY nut props, hide all bolt props
+        # Hide bolt properties
+        for _p in ("Thread_Pitch", "Thread_Class_ISO", "ThreadPitch",
+                   "Thread_Length", "Thread_Type", "Thread_TPI",
+                   "Thread_TPI_Custom", "Thread_Class"):
+            if hasattr(fp, _p):
+                fp.setEditorMode(_p, 2)
+        # Show nut properties
+        if _TMI is not None:
+            _TMI.set_nut_thread_visibility(fp, thread_on)
+
     else:
+        # Metric bolt — show bolt props, hide nut props
         _TM.set_metric_thread_visibility(fp, thread_on)
+        for _p in ("Thread_Pitch_Nut", "Thread_Class_Nut"):
+            if hasattr(fp, _p):
+                fp.setEditorMode(_p, 2)
 
 
 def _update_metric_mean_dia(fp):
@@ -600,6 +632,28 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
+        # ── Metric nut pitch/class cascade ──────────────────────────────────
+        if prop == "Thread_Pitch_Nut" and hasattr(fp, "Thread_Pitch_Nut") \
+                and _TMI is not None:
+            _dia_n = str(getattr(fp, "Diameter", "") or "")
+            _p_n   = str(getattr(fp, "Thread_Pitch_Nut", "") or "")
+            if _p_n and hasattr(fp, "Thread_Class_Nut"):
+                _nc = _TMI.valid_classes_for_dia_pitch(_dia_n, _p_n) or ["6H"]
+                try:
+                    _cur_nc = str(fp.Thread_Class_Nut)   # read BEFORE list assign
+                    fp.Thread_Class_Nut = _nc
+                    _rest = _cur_nc if _cur_nc in _nc else ("6H" if "6H" in _nc else _nc[0])
+                    if str(fp.Thread_Class_Nut) != _rest:
+                        fp.Thread_Class_Nut = _rest
+                except Exception:
+                    pass
+            FastenerBase.FSCache.clear()
+            return
+
+        if prop in ("Thread_Class_Nut", "Thread_Root") and hasattr(fp, prop):
+            FastenerBase.FSCache.clear()
+            return
+
         if prop == "Diameter" and _is_asme_external(fp):
             _d_nom = _TA.bolt_nominal(getattr(fp, "Diameter", "") or "")
             if hasattr(fp, "Thread_Type"):
@@ -656,7 +710,14 @@ class FSScrewObject(FSBaseObject):
 
                 if hasattr(fp, "Thread_Class"):
                     if _tpi_s == "Custom":
-                        _cls_opts = _TA.all_classes_for_nominal(_nom)
+                        # Custom TPI: show classes from nearest standard TPI
+                        # Thread geometry uses custom TPI, diameter lookup uses nearest
+                        _cust_val = int(getattr(fp, "Thread_TPI_Custom", 0) or 0)
+                        if _cust_val > 0:
+                            _near = _TA.nearest_tpi(_cust_val, _nom, _tt)
+                            _cls_opts = _TA.valid_classes_for_series_tpi(_nom, _tt, _near)
+                        else:
+                            _cls_opts = _TA.all_classes_for_nominal(_nom)
                     else:
                         try:
                             _tpi_f = float(_tpi_s)
@@ -889,6 +950,59 @@ class FSScrewObject(FSBaseObject):
         _is_asme_t   = _this_type.startswith("ASME")
         _has_ext_t   = "TThread" in params
         _has_nut_t   = "TNutThread" in params
+
+        # ── Metric nut: Thread_Pitch_Nut + Thread_Class_Nut + Thread_Root ────
+        _is_metric_nut = _has_nut_t and not _is_asme_t and _TMI is not None
+        if _is_metric_nut:
+            _dia_nut = str(getattr(obj, "Diameter", diameter) or "")
+            if _dia_nut in ("Auto", "", "Custom"):
+                try:
+                    _dia_nut = screwMaker.AutoDiameter(type, None, None, False)
+                except Exception:
+                    _dia_nut = diameter or ""
+            if not hasattr(obj, "Thread_Pitch_Nut"):
+                _np = _TMI.valid_pitches_for_dia(_dia_nut)
+                if _np:
+                    obj.addProperty("App::PropertyEnumeration", "Thread_Pitch_Nut",
+                        "Parameters",
+                        translate("FastenerCmd",
+                            "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
+                    ).Thread_Pitch_Nut = _np
+                    try:
+                        obj.Thread_Pitch_Nut = _np[0]
+                    except Exception:
+                        pass
+                    obj.setEditorMode("Thread_Pitch_Nut", 2)
+            if not hasattr(obj, "Thread_Class_Nut"):
+                _np0 = ""
+                try:
+                    _np0 = str(obj.Thread_Pitch_Nut)
+                except Exception:
+                    pass
+                _np0 = _np0 or "1.0"
+                _nc = _TMI.valid_classes_for_dia_pitch(_dia_nut, _np0) or ["6H"]
+                obj.addProperty("App::PropertyEnumeration", "Thread_Class_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Class_Nut — ISO 965 internal (6H=standard)")
+                ).Thread_Class_Nut = _nc
+                try:
+                    _def_nc = "6H" if "6H" in _nc else _nc[0]
+                    obj.Thread_Class_Nut = _def_nc
+                except Exception:
+                    pass
+                obj.setEditorMode("Thread_Class_Nut", 2)
+            if not hasattr(obj, "Thread_Root"):
+                obj.addProperty("App::PropertyEnumeration", "Thread_Root",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Root: Flat=standard ISO, Round=ISO 68-1 round root")
+                ).Thread_Root = ["Flat", "Round"]
+                try:
+                    obj.Thread_Root = "Flat"
+                except Exception:
+                    pass
+                obj.setEditorMode("Thread_Root", 2)
 
         if "TType" in params and _is_asme_t and _has_ext_t \
                 and not hasattr(obj, "Thread_Type"):
@@ -1238,9 +1352,15 @@ class FSScrewObject(FSBaseObject):
             # _tt is the actual Thread_Type string (UNC/UNF/UNEF/UN/UNR)
             # valid_classes_for_series_tpi handles UN/UNR correctly
             if hasattr(fp, "Thread_Class"):
-                _vcls = _TA.all_classes_for_nominal(_nom) if _is_cust else \
-                        (_TA.valid_classes_for_series_tpi(_nom, _tt, _res_tpi)
-                         if _res_tpi > 0 else ["2A", "3A"])
+                if _is_cust and _res_tpi > 0:
+                    # Custom TPI: use nearest standard TPI for class lookup
+                    _near_tpi = _TA.nearest_tpi(_res_tpi, _nom, _tt)
+                    _vcls = _TA.valid_classes_for_series_tpi(_nom, _tt, _near_tpi)
+                elif _is_cust:
+                    _vcls = _TA.all_classes_for_nominal(_nom)
+                else:
+                    _vcls = (_TA.valid_classes_for_series_tpi(_nom, _tt, _res_tpi)
+                             if _res_tpi > 0 else ["2A", "3A"])
                 if _vcls:
                     try:
                         # Read BEFORE assigning list — FreeCAD resets enum value
@@ -1259,6 +1379,22 @@ class FSScrewObject(FSBaseObject):
             _set_thread_props_visibility(fp, True)
 
         elif thread_on and not asme_type:
+            # Metric nut: show Pitch_Nut + Class_Nut + Thread_Root
+            if "TNutThread" in params and _TMI is not None:
+                _TMI.set_nut_thread_visibility(fp, True)
+                # Add nut props in execute if not yet present
+                if not hasattr(fp, "Thread_Pitch_Nut"):
+                    _dia_en = str(fp.Diameter or "")
+                    _np_e = _TMI.valid_pitches_for_dia(_dia_en)
+                    if _np_e:
+                        fp.addProperty("App::PropertyEnumeration", "Thread_Pitch_Nut",
+                            "Parameters",
+                            translate("FastenerCmd",
+                                "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
+                        ).Thread_Pitch_Nut = _np_e
+                        try: fp.Thread_Pitch_Nut = _np_e[0]
+                        except Exception: pass
+                        fp.setEditorMode("Thread_Pitch_Nut", 0)
             if hasattr(fp, "Thread_Pitch"):
                 _dia_e   = str(fp.Diameter or "")
                 _new_p_e = _TM.valid_pitches_for_dia(_dia_e)
@@ -1297,6 +1433,8 @@ class FSScrewObject(FSBaseObject):
             self.Thread_Pitch     = str(getattr(fp, "Thread_Pitch",     "") or "")
             self.Thread_Class_ISO = str(getattr(fp, "Thread_Class_ISO", "") or "6g")
             self.Thread_Root      = str(getattr(fp, "Thread_Root",  "Flat") or "Flat")
+            self.Thread_Pitch_Nut = str(getattr(fp, "Thread_Pitch_Nut", "") or "")
+            self.Thread_Class_Nut = str(getattr(fp, "Thread_Class_Nut", "") or "6H")
 
             _set_thread_props_visibility(fp, True)
 
@@ -1334,15 +1472,18 @@ class FSScrewObject(FSBaseObject):
                 _log_cls   = self.Thread_Class or "2A"
                 _log_type  = self.Thread_Type  or "UNC"
                 _log_series = _log_type if _log_type in ("UNC","UNF","UNEF") else "UN"
+                _is_cust_log = str(getattr(fp, "Thread_TPI", "")) == "Custom"
 
-                # raw CSV dia
+                # raw CSV dia — custom TPI uses nearest standard for lookup
                 _d_raw = None
                 try:
                     _nom_key = _TA.bolt_nominal(self.calc_diam)
-                    _d_raw   = _TA.outer_dia_mm(
-                        _nom_key, _log_series,
-                        float(_log_tpi) if str(_log_tpi).replace(".","").isdigit() else 0,
-                        _log_cls)
+                    _tpi_num = float(_log_tpi) if str(_log_tpi).replace(".","").isdigit() else 0
+                    if _is_cust_log and _tpi_num > 0:
+                        _near_log = _TA.nearest_tpi(_tpi_num, _nom_key, _log_series)
+                        _d_raw = _TA.outer_dia_mm(_nom_key, _log_series, _near_log, _log_cls)
+                    else:
+                        _d_raw = _TA.outer_dia_mm(_nom_key, _log_series, _tpi_num, _log_cls)
                 except Exception:
                     pass
 

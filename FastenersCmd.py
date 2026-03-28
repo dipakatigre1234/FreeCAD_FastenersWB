@@ -1226,26 +1226,86 @@ class FSScrewObject(FSBaseObject):
         asme_type = str(fp.Type).startswith("ASME")
         has_ext   = "TThread" in params
 
-        if thread_on and not asme_type:
-            # Use calc_diam (already resolved from Auto) for CSV lookup
+        _is_metric_nut_exec = thread_on and not asme_type and "TNutThread" in params
+        _is_metric_bolt_exec = thread_on and not asme_type and "TThread" in params
+
+        if _is_metric_nut_exec and _TMI is not None:
+            # ── METRIC NUT — populate Thread_Pitch_Nut + Thread_Class_Nut ────
             _dia_pre = str(self.calc_diam or fp.Diameter or "")
-            # Add Thread_Root if missing (existing bolts from old docs)
+
+            # Thread_Root for nut
+            if not hasattr(fp, "Thread_Root"):
+                fp.addProperty("App::PropertyEnumeration", "Thread_Root",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Root: Flat (ISO standard) or Round (ISO 68-1)")
+                ).Thread_Root = ["Flat", "Round"]
+                try: fp.Thread_Root = "Flat"
+                except Exception: pass
+
+            # Thread_Pitch_Nut — from metric_internal_thread_dia.csv
+            _np = _TMI.valid_pitches_for_dia(_dia_pre)
+            if not _np:
+                _np = _TMI.valid_pitches_for_dia(str(fp.Diameter or ""))
+            if _np:
+                if not hasattr(fp, "Thread_Pitch_Nut"):
+                    fp.addProperty("App::PropertyEnumeration", "Thread_Pitch_Nut",
+                        "Parameters",
+                        translate("FastenerCmd",
+                            "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
+                    ).Thread_Pitch_Nut = _np
+                    try: fp.Thread_Pitch_Nut = _np[0]
+                    except Exception: pass
+                else:
+                    try:
+                        _cur_np = str(fp.Thread_Pitch_Nut)
+                        fp.Thread_Pitch_Nut = _np
+                        fp.Thread_Pitch_Nut = _cur_np if _cur_np in _np else _np[0]
+                    except Exception: pass
+
+            # Thread_Class_Nut
+            _pn_now = ""
+            try: _pn_now = str(fp.Thread_Pitch_Nut)
+            except Exception: pass
+            _pn_now = _pn_now or (_np[0] if _np else "1.0")
+            _cn = _TMI.valid_classes_for_dia_pitch(_dia_pre, _pn_now) or ["6H"]
+            if not hasattr(fp, "Thread_Class_Nut"):
+                fp.addProperty("App::PropertyEnumeration", "Thread_Class_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Class_Nut — ISO 965 internal (6H=standard)")
+                ).Thread_Class_Nut = _cn
+                _def_cn = "6H" if "6H" in _cn else _cn[0]
+                try: fp.Thread_Class_Nut = _def_cn
+                except Exception: pass
+            else:
+                try:
+                    _cur_cn = str(fp.Thread_Class_Nut)
+                    fp.Thread_Class_Nut = _cn
+                    fp.Thread_Class_Nut = _cur_cn if _cur_cn in _cn else                                           ("6H" if "6H" in _cn else _cn[0])
+                except Exception: pass
+
+            # Store for FSmakeHexNut
+            self.Thread_Pitch_Nut = str(getattr(fp, "Thread_Pitch_Nut", "") or "")
+            self.Thread_Class_Nut = str(getattr(fp, "Thread_Class_Nut", "") or "6H")
+            self.Thread_Root      = str(getattr(fp, "Thread_Root", "Flat") or "Flat")
+
+        if _is_metric_bolt_exec:
+            # ── METRIC BOLT — populate Thread_Pitch + Thread_Class_ISO ───────
+            _dia_pre = str(self.calc_diam or fp.Diameter or "")
+            # Thread_Root for bolt
             if not hasattr(fp, "Thread_Root") and "TPitch" in params:
                 fp.addProperty("App::PropertyEnumeration", "Thread_Root",
                     "Parameters",
-                    translate("FastenerCmd", "Thread_Root: Flat (ISO standard) or Round (ISO 68-1)")
+                    translate("FastenerCmd",
+                        "Thread_Root: Flat (ISO standard) or Round (ISO 68-1)")
                 ).Thread_Root = ["Flat", "Round"]
-                try:
-                    fp.Thread_Root = "Flat"
-                except Exception:
-                    pass
+                try: fp.Thread_Root = "Flat"
+                except Exception: pass
                 fp.setEditorMode("Thread_Root", 0)
 
-            # ── Ensure Thread_Pitch property exists and has valid options ──
-            # Always repopulate from CSV using resolved diameter
             _pp = _TM.valid_pitches_for_dia(_dia_pre)
             if not _pp:
-                # last resort: try raw fp.Diameter
                 _pp = _TM.valid_pitches_for_dia(str(fp.Diameter or ""))
             if _pp:
                 if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
@@ -1260,29 +1320,22 @@ class FSScrewObject(FSBaseObject):
                         fp.Thread_Pitch = _pp
                         fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp else _pp[0]
                         fp.setEditorMode("Thread_Pitch", 0)
-                    except Exception:
-                        pass
+                    except Exception: pass
 
-            # ── Ensure Thread_Class_ISO property exists and has valid options ──
             _p_now = ""
-            try:
-                _p_now = str(fp.Thread_Pitch)
-            except Exception:
-                pass
+            try: _p_now = str(fp.Thread_Pitch)
+            except Exception: pass
             _p_now = _p_now or (_pp[0] if _pp else "1.0")
             _cp = _TM.valid_classes_for_dia_pitch(_dia_pre, _p_now)
-            if not _cp:
-                _cp = ["6g"]
+            if not _cp: _cp = ["6g"]
             if not hasattr(fp, "Thread_Class_ISO") and "TPitch" in params:
                 fp.addProperty("App::PropertyEnumeration", "Thread_Class_ISO",
                     "Parameters",
                     translate("FastenerCmd", "Thread_Class — ISO 965 (6g=standard)")
                 ).Thread_Class_ISO = _cp
                 _def_cls = "6g" if "6g" in _cp else _cp[0]
-                try:
-                    fp.Thread_Class_ISO = _def_cls
-                except Exception:
-                    pass
+                try: fp.Thread_Class_ISO = _def_cls
+                except Exception: pass
                 fp.setEditorMode("Thread_Class_ISO", 0)
             elif hasattr(fp, "Thread_Class_ISO"):
                 try:
@@ -1290,8 +1343,7 @@ class FSScrewObject(FSBaseObject):
                     fp.Thread_Class_ISO = _cp
                     fp.Thread_Class_ISO = _cur_c if _cur_c in _cp else _cp[0]
                     fp.setEditorMode("Thread_Class_ISO", 0)
-                except Exception:
-                    pass
+                except Exception: pass
 
         _set_thread_props_visibility(fp, thread_on)
 

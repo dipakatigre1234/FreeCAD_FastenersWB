@@ -44,7 +44,9 @@ def makeHexNut(self, fa):
     - ISO 4033 Hexagon high nuts (style 2) — Product grades A and B
     - ISO 4034 Hexagon regular nuts (style 1) — Product grade C
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
+    - ISO 7414 Hexagon heavy nuts — metric
     - ASME B18.2.2 machine screw, thin, and regular hexagon nuts
+    - ASME B18.2.2 Table 10 Heavy Hex Nuts (10A) and Heavy Hex Jam Nuts (10B)
     - DIN 6334 3xD length hexagon nuts
     - ASME B18.2.2 coupling nuts
 
@@ -52,6 +54,11 @@ def makeHexNut(self, fa):
       Metric (ISO/DIN): thread_dia = dia + 0.05 * P
       ASME (inch):      thread_dia = dia + 0.05 / TPI
       Custom pitch/TPI: overrides table value via fa.calc_pitch / fa.calc_tpi
+
+    dimTable column layout per type:
+      ISO7414              : P, c, da, dw, e, m, mw, s_nom
+      ASMEB18.2.2.10A      : P, da, e, m_a, m_b, s  → Heavy Hex Nut     (m = m_a)
+      ASMEB18.2.2.10B      : P, da, e, m_a, m_b, s  → Heavy Hex Jam Nut (m = m_b)
     """
 
     SType = fa.baseType
@@ -80,7 +87,10 @@ def makeHexNut(self, fa):
     is_asme = SType.startswith("ASME")
 
     # ── Unpack dimension table ────────────────────────────────────────────────
-    if SType[:3] == 'ISO' or SType == "DIN934":
+    if SType == "ISO7414":
+        # CSV columns: P, c, da, dw, e, m, mw, s_nom
+        P, _, da, _, _, m, _, s = fa.dimTable
+    elif SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, _, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
         P, da, _, m, s = fa.dimTable
@@ -88,6 +98,14 @@ def makeHexNut(self, fa):
         P, da, _, m_a, m_b, s = fa.dimTable
         m = m_a
     elif SType == 'ASMEB18.2.2.4B':
+        P, da, _, m_a, m_b, s = fa.dimTable
+        m = m_b
+    elif SType == 'ASMEB18.2.2.10A':
+        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Nut
+        P, da, _, m_a, m_b, s = fa.dimTable
+        m = m_a
+    elif SType == 'ASMEB18.2.2.10B':
+        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Jam Nut
         P, da, _, m_a, m_b, s = fa.dimTable
         m = m_b
     elif SType == "DIN6334":

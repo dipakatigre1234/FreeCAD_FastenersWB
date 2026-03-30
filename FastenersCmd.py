@@ -493,15 +493,17 @@ def _set_thread_props_visibility_inner(fp, thread_on):
 
     elif is_metric_nut:
         # Metric nut — show ONLY nut props, hide all bolt props
-        # Hide bolt properties
         for _p in ("Thread_Pitch", "Thread_Class_ISO", "ThreadPitch",
                    "Thread_Length", "Thread_Type", "Thread_TPI",
-                   "Thread_TPI_Custom", "Thread_Class"):
+                   "Thread_TPI_Custom", "Thread_Class", "Thread_Root"):
             if hasattr(fp, _p):
                 fp.setEditorMode(_p, 2)
-        # Show nut properties
+        # Show nut properties (no Thread_Root for nut)
         if _TMI is not None:
-            _TMI.set_nut_thread_visibility(fp, thread_on)
+            if hasattr(fp, "Thread_Pitch_Nut"):
+                fp.setEditorMode("Thread_Pitch_Nut", 0 if thread_on else 2)
+            if hasattr(fp, "Thread_Class_Nut"):
+                fp.setEditorMode("Thread_Class_Nut", 0 if thread_on else 2)
 
     else:
         # Metric bolt — show bolt props, hide nut props
@@ -992,17 +994,7 @@ class FSScrewObject(FSBaseObject):
                 except Exception:
                     pass
                 obj.setEditorMode("Thread_Class_Nut", 2)
-            if not hasattr(obj, "Thread_Root"):
-                obj.addProperty("App::PropertyEnumeration", "Thread_Root",
-                    "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_Root: Flat=standard ISO, Round=ISO 68-1 round root")
-                ).Thread_Root = ["Flat", "Round"]
-                try:
-                    obj.Thread_Root = "Flat"
-                except Exception:
-                    pass
-                obj.setEditorMode("Thread_Root", 2)
+
 
         if "TType" in params and _is_asme_t and _has_ext_t \
                 and not hasattr(obj, "Thread_Type"):
@@ -1233,15 +1225,7 @@ class FSScrewObject(FSBaseObject):
             # ── METRIC NUT — populate Thread_Pitch_Nut + Thread_Class_Nut ────
             _dia_pre = str(self.calc_diam or fp.Diameter or "")
 
-            # Thread_Root for nut
-            if not hasattr(fp, "Thread_Root"):
-                fp.addProperty("App::PropertyEnumeration", "Thread_Root",
-                    "Parameters",
-                    translate("FastenerCmd",
-                        "Thread_Root: Flat (ISO standard) or Round (ISO 68-1)")
-                ).Thread_Root = ["Flat", "Round"]
-                try: fp.Thread_Root = "Flat"
-                except Exception: pass
+
 
             # Thread_Pitch_Nut — from metric_internal_thread_dia.csv
             _np = _TMI.valid_pitches_for_dia(_dia_pre)

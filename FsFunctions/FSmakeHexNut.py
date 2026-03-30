@@ -202,9 +202,11 @@ def makeHexNut(self, fa):
     if fa.Thread:
         if is_asme:
             thread_dia = dia + 0.05 / eff_tpi
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            nut = nut.cut(thread_cutter)
         else:
-            thread_dia = dia + 0.05 * P
-        thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
-        nut = nut.cut(thread_cutter)
+            thread_dia    = dia + 0.05 * P
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            nut = nut.cut(thread_cutter)
 
     return nut

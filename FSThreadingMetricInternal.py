@@ -288,88 +288,87 @@ def resolve_nut_pitch(fa):
 def make_internal_thread_cutter(bore_dia, P, depth, root_round=False):
     """Return ISO metric internal thread cutter solid.
 
-    For an internal thread cutter the profile is mirrored relative to the
-    external cutter: it cuts OUTWARD from bore_dia/2 toward the major
-    diameter, removing material to form the thread helix inside the nut.
+    Exact mirror of make_metric_thread_cutter (external).
+
+    External: crest at d2 (outer),  root inward  at d2 - 0.625H
+    Internal: crest at d2 (inner),  root outward at d2 + 0.625H
+
+    root_round=False → flat root (into nut material)   standard
+    root_round=True  → rounded root (ISO 68-1)         standard for nuts
 
     Parameters
     ----------
-    bore_dia   : float  effective bore diameter mm (D1max + deviation)
-    P          : float  pitch mm
-    depth      : float  thread depth mm (= nut height m)
-    root_round : bool   True → rounded root (ISO 68-1 style)
-                        False → flat root (standard)
-
-    Thread geometry (ISO 68-1):
-      H   = (sqrt(3)/2) × P          — full thread depth
-      d2  = bore_dia / 2             — bore radius (root of nut thread)
-      x_crest = d2 + 0.625 × H      — crest position (major dia side)
+    bore_dia  : float  effective bore dia mm (D1max + deviation)
+    P         : float  pitch mm
+    depth     : float  thread depth mm (nut height m)
+    root_round: bool   True → arc at root (outward), False → flat
     """
     import Part, FastenerBase
     import FreeCAD as _FC
     Base = _FC.Base
 
-    H       = _sqrt3 / 2.0 * P
-    d2      = bore_dia / 2.0          # bore radius = nut thread root
-    x_crest = d2 + 0.625 * H         # crest at major dia side
+    H      = _sqrt3 / 2.0 * P
+    d2     = bore_dia / 2.0          # bore wall radius = crest (innermost)
+    trot   = int(depth // P) + 1
+    ht     = trot * P
 
-    trot = int(depth // P) + 2
-    ht   = trot * P
-
-    # Internal thread profile — exact mirror of external cutter (FSThreadingMetric.py)
-    #
-    # External bolt:  crest at large radius (d2),  root inward  (x_root = d2 - 0.625H)
-    # Internal nut:   crest at small radius (d2),  root outward (x_crest = d2 + 0.625H)
-    #
-    # Crest of nut thread: bore wall (d2 = bore_dia/2) — always flat / truncated
-    # Root  of nut thread: into material (x_crest)     — flat or rounded
-    #
-    # Profile points (same sequence as external, radii mirrored):
-    #   near crest bottom → flank outward → root (arc or flat) → flank inward → near crest top
-    #
+    # Root outward into nut material (mirror of external root inward)
+    x_root = d2 + 0.625 * H
     h_root = P / 8.0
 
+    # Profile — true negative image of bolt external cutter:
+    #
+    #   Bolt:  crest OUTER (d2+offset) flat always
+    #          root  INNER (x_root)    Flat or Round  ← root_round applied here
+    #
+    #   Nut:   root  OUTER (x_root)    flat always    (standard, into material)
+    #          crest INNER (d2)        Flat or Round  ← root_round applied here
+    #
+    # So root_round=True  → rounded CREST (toward center hole)
+    #    root_round=False → flat    CREST (toward center hole)
+    #
     fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P, -0.475 * P)   # crest flat bottom
-    fm.AddPoint(x_crest,                      -h_root)       # flank → root bottom
+    fm.AddPoint(x_root - _sqrt3 * 3 / 80.0 * P, -0.475 * P)  # near root flank bottom
+    fm.AddPoint(d2, -h_root)                                    # crest bottom (inner)
     if root_round:
-        # Rounded root outward into nut material — prevents stress concentration
-        fm.AddArc(x_crest + 0.5 * 0.125 * P, 0, x_crest, h_root)
+        # Arc midpoint goes OUTWARD from d2 — mirror of bolt arc going inward from x_root
+        # Bolt:  fm.AddArc(x_root - 0.5*0.125*P, 0, x_root,  h_root)  ← inward
+        # Nut:   fm.AddArc(d2     + 0.5*0.125*P, 0, d2,      h_root)  ← outward (mirror)
+        fm.AddArc(d2 + 0.5 * 0.125 * P, 0, d2, h_root)
     else:
-        fm.AddPoint(x_crest, h_root)                         # flat root top
-    fm.AddPoint(d2 - _sqrt3 * 3 / 80.0 * P,  0.475 * P)   # crest flat top
+        fm.AddPoint(d2, h_root)                                 # flat crest top
+    fm.AddPoint(x_root - _sqrt3 * 3 / 80.0 * P,  0.475 * P)  # near root flank top
 
     wire = fm.GetClosedWire()
-    wire.translate(Base.Vector(0, 0, -ht - P * 0.6))
+    # Nut body is at z=0 to z=m (upward) — do NOT rotate 180°
+    # Wire starts slightly below z=0 so helix lead-in is below nut face
+    wire.translate(Base.Vector(0, 0, -P * 0.6))
 
-    # Helix at bore wall radius (d2 = crest) — mirrors external helix at crest
-    depth      = 0.625 * H
-    helix      = Part.makeLongHelix(P, ht, d2, 0, False)
-    lead_helix = Part.makeLongHelix(P, P / 2.0, d2 - 0.55 * depth, 0, False)
-    lead_helix.translate(Base.Vector(0.55 * depth, 0, 0))
+    thread_depth = 0.625 * H
+    # Helix goes UPWARD (z=0 to ht) to match nut body direction
+    # No 180° rotation — nut is opposite direction to bolt shank
+    helix      = Part.makeLongHelix(P, ht, bore_dia / 2.0, 0, False)
+    lead_helix = Part.makeLongHelix(P, P / 2.0,
+                                    bore_dia / 2.0 + 0.55 * thread_depth, 0, False)
+    lead_helix.translate(Base.Vector(-0.55 * thread_depth, 0, 0))
 
     path  = Part.Wire([helix, lead_helix])
     sweep = Part.BRepOffsetAPI.MakePipeShell(path)
     sweep.setFrenetMode(True)
     sweep.setTransitionMode(1)
     sweep.add(wire)
-    if not sweep.isReady():
-        raise RuntimeError("[FSThreadingMetricInternal] sweep not ready")
-    sweep.build()
-    shell = sweep.shape()
-    # makeSolid() on the sweep object can fail with open shells.
-    # Use Part.makeSolid() on the shell directly — more robust.
-    try:
-        solid = Part.makeSolid(shell)
-    except Exception:
-        sewed = Part.Shell(shell.Faces)
-        solid = Part.makeSolid(sewed)
-    # Clip to a box — same as external cutter — removes open ends cleanly
-    # Box must be larger than the cutter solid
-    box_r = x_crest + P
-    box   = Part.makeBox(2 * box_r, 2 * box_r, bore_dia + 2 * P,
-                         Base.Vector(-box_r, -box_r, -ht - P))
-    return solid.common(box)
+    if sweep.isReady():
+        sweep.build()
+    else:
+        raise RuntimeError("[FSThreadingMetricInternal] sweep failed")
+    sweep.makeSolid()
+    threads = sweep.shape()
+    # Box clip — keep only the region from z=-P to z=depth+P
+    # This trims the lead-in stubs above and below the nut face
+    clip_r = x_root + P
+    box = Part.makeBox(2 * clip_r, 2 * clip_r, depth + 2 * P,
+                       Base.Vector(-clip_r, -clip_r, -P))
+    return threads.common(box)
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────

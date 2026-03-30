@@ -261,6 +261,7 @@ screwTables = {
     "ISO4033": ("Nut", "makeHexNut"),
     "ISO4034": ("Nut", "makeHexNut"),
     "ISO4035": ("Nut", "makeHexNut"),
+    "ISO7414": ("Nut", "makeHexNut"), #HEAVY HEX NUT
     "ISO4161": ("Nut", "makeHexNutWFlange"),
     "ISO7040": ("Nut", "makeNylocNut"),
     "ISO7041": ("Nut", "makeNylocNut"),
@@ -313,6 +314,8 @@ screwTables = {
     "ASMEB18.2.2.2": ("Nut", "makeSquareNut"),
     "ASMEB18.2.2.4A": ("Nut", "makeHexNut"),
     "ASMEB18.2.2.4B": ("Nut", "makeHexNut"),
+    "ASMEB18.2.2.10A": ("Nut", "makeHexNut"),  #HEAVY HEX NUT(TABLE 10)
+    "ASMEB18.2.2.10B": ("Nut", "makeHexNut"),   #HEAVY HEX JAM NUT(TABLE 10)
     "ASMEB18.2.2.5": ("Nut", "makeCastleNut"),
     "ASMEB18.2.2.12": ("Nut", "makeHexNutWFlange"),
     "ASMEB18.2.2.13": ("Nut", "makeHexNut"),

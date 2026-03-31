@@ -35,6 +35,10 @@ try:
     import FSThreadingMetricInternal as _TMI
 except Exception:
     _TMI = None
+try:
+    import FSThreadingASMEInternal as _TAI
+except Exception:
+    _TAI = None
 
 
 def makeHexNut(self, fa):
@@ -44,9 +48,7 @@ def makeHexNut(self, fa):
     - ISO 4033 Hexagon high nuts (style 2) — Product grades A and B
     - ISO 4034 Hexagon regular nuts (style 1) — Product grade C
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
-    - ISO 7414 Hexagon heavy nuts — metric
     - ASME B18.2.2 machine screw, thin, and regular hexagon nuts
-    - ASME B18.2.2 Table 10 Heavy Hex Nuts (10A) and Heavy Hex Jam Nuts (10B)
     - DIN 6334 3xD length hexagon nuts
     - ASME B18.2.2 coupling nuts
 
@@ -54,11 +56,6 @@ def makeHexNut(self, fa):
       Metric (ISO/DIN): thread_dia = dia + 0.05 * P
       ASME (inch):      thread_dia = dia + 0.05 / TPI
       Custom pitch/TPI: overrides table value via fa.calc_pitch / fa.calc_tpi
-
-    dimTable column layout per type:
-      ISO7414              : P, c, da, dw, e, m, mw, s_nom
-      ASMEB18.2.2.10A      : P, da, e, m_a, m_b, s  → Heavy Hex Nut     (m = m_a)
-      ASMEB18.2.2.10B      : P, da, e, m_a, m_b, s  → Heavy Hex Jam Nut (m = m_b)
     """
 
     SType = fa.baseType
@@ -87,10 +84,7 @@ def makeHexNut(self, fa):
     is_asme = SType.startswith("ASME")
 
     # ── Unpack dimension table ────────────────────────────────────────────────
-    if SType == "ISO7414":
-        # CSV columns: P, c, da, dw, e, m, mw, s_nom
-        P, _, da, _, _, m, _, s = fa.dimTable
-    elif SType[:3] == 'ISO' or SType == "DIN934":
+    if SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, _, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
         P, da, _, m, s = fa.dimTable
@@ -98,14 +92,6 @@ def makeHexNut(self, fa):
         P, da, _, m_a, m_b, s = fa.dimTable
         m = m_a
     elif SType == 'ASMEB18.2.2.4B':
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_b
-    elif SType == 'ASMEB18.2.2.10A':
-        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Nut
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_a
-    elif SType == 'ASMEB18.2.2.10B':
-        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Jam Nut
         P, da, _, m_a, m_b, s = fa.dimTable
         m = m_b
     elif SType == "DIN6334":
@@ -160,11 +146,25 @@ def makeHexNut(self, fa):
     cham = s * (sqrt3 / 3 - 1 / 2) * math.tan(math.radians(22.5))
     H = P * cos30
 
-    # ── Bore radius from CSV D1max + deviation ───────────────────────────────
-    # Metric nuts: use D1max from metric_internal_thread_dia.csv
-    # ASME nuts:   keep original major-based formula (no internal CSV yet)
+    # ── Bore radius from CSV ─────────────────────────────────────────────────
+    # Metric nuts: D1max from metric_internal_thread_dia.csv
+    # ASME nuts:   Minor_Dia_Mean from un_unr_internal_thread_minor_dia.csv
     _bore_r = None
-    if not is_asme and _TMI is not None:
+    if is_asme and _TAI is not None:
+        try:
+            _dia_s   = str(getattr(fa, "calc_diam", "") or "")
+            _type_s  = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+            _tpi_s   = str(getattr(fa, "Thread_TPI_Nut",  "") or "")
+            _cls_s   = str(getattr(fa, "Thread_Class_Nut", "2B") or "2B")
+            if not _tpi_s:
+                _tpi_f = _TAI.resolve_nut_tpi(fa)
+                _tpi_s = str(_tpi_f) if _tpi_f else ""
+            if _tpi_s:
+                _bore_eff = _TAI.bore_dia_from_table(fa, _dia_s, _tpi_s, _type_s, _cls_s)
+                _bore_r   = _bore_eff / 2.0
+        except Exception:
+            _bore_r = None
+    elif not is_asme and _TMI is not None:
         try:
             _dia_s  = str(getattr(fa, "calc_diam", "") or "")
             _p_s    = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
@@ -219,8 +219,21 @@ def makeHexNut(self, fa):
     #
     if fa.Thread:
         if is_asme:
-            thread_dia = dia + 0.05 / eff_tpi
-            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            # ASME nut: TPI-based clearance, pitch from TPI
+            _nut_tpi = None
+            try:
+                _nut_tpi_s = str(getattr(fa, "Thread_TPI_Nut", "") or "")
+                if _nut_tpi_s:
+                    _nut_tpi = float(_nut_tpi_s)
+            except Exception:
+                pass
+            if _nut_tpi and _nut_tpi > 0:
+                _nut_P   = 25.4 / _nut_tpi
+                thread_dia = dia + 0.05 / _nut_tpi
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, _nut_P, m + _nut_P)
+            else:
+                thread_dia = dia + 0.05 / eff_tpi
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
             nut = nut.cut(thread_cutter)
         else:
             thread_dia    = dia + 0.05 * P

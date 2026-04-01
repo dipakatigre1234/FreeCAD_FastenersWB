@@ -35,6 +35,10 @@ try:
     import FSThreadingMetricInternal as _TMI
 except Exception:
     _TMI = None
+try:
+    import FSThreadingASMEInternal as _TAI
+except Exception:
+    _TAI = None
 
 
 def makeHexNut(self, fa):
@@ -162,7 +166,7 @@ def makeHexNut(self, fa):
 
     # ── Bore radius from CSV D1max + deviation ───────────────────────────────
     # Metric nuts: use D1max from metric_internal_thread_dia.csv
-    # ASME nuts:   keep original major-based formula (no internal CSV yet)
+    # ASME nuts:   use Minor_Dia_Max from un_unr_internal_thread_minor_dia.csv
     _bore_r = None
     if not is_asme and _TMI is not None:
         try:
@@ -176,6 +180,23 @@ def makeHexNut(self, fa):
             if _p_s:
                 _bore_eff = _TMI.bore_dia_from_table(fa, _dia_s, _p_s, _cls_s)
                 _bore_r   = _bore_eff / 2.0
+        except Exception:
+            _bore_r = None
+    elif is_asme and _TAI is not None:
+        # ASME nut — bore from un_unr_internal_thread_minor_dia.csv
+        try:
+            _dia_s_a   = str(getattr(fa, "calc_diam", "") or "")
+            _tpi_s_a   = str(getattr(fa, "Thread_TPI_Nut", "") or "")
+            _type_s_a  = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+            _cls_s_a   = str(getattr(fa, "Thread_Class_Nut_ASME", "2B") or "2B")
+            # Resolve TPI from fa if Thread_TPI_Nut not set
+            if not _tpi_s_a:
+                _tpi_val_a = _TAI.resolve_nut_tpi(fa)
+                _tpi_s_a   = str(_tpi_val_a) if _tpi_val_a else ""
+            if _tpi_s_a:
+                _bore_eff_a = _TAI.bore_dia_from_table(
+                    fa, _dia_s_a, _tpi_s_a, _type_s_a, _cls_s_a)
+                _bore_r = _bore_eff_a / 2.0
         except Exception:
             _bore_r = None
 
@@ -219,7 +240,18 @@ def makeHexNut(self, fa):
     #
     if fa.Thread:
         if is_asme:
-            thread_dia = dia + 0.05 / eff_tpi
+            # Resolve eff_tpi: prefer _TAI.resolve_nut_tpi, fall back to dimTable
+            _eff_tpi_c = None
+            if _TAI is not None:
+                try:
+                    _eff_tpi_c = _TAI.resolve_nut_tpi(fa)
+                except Exception:
+                    pass
+            if not _eff_tpi_c and 'eff_tpi' in dir():
+                _eff_tpi_c = eff_tpi
+            if not _eff_tpi_c or _eff_tpi_c <= 0:
+                _eff_tpi_c = 25.4 / P if P > 0 else 8.0
+            thread_dia = dia + 0.05 / _eff_tpi_c
             thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
             nut = nut.cut(thread_cutter)
         else:

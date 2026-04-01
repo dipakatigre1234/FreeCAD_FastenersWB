@@ -36,6 +36,10 @@ try:
     import FSThreadingMetricInternal as _TMI
 except Exception:
     _TMI = None
+try:
+    import FSThreadingASMEInternal as _TAI
+except Exception:
+    _TAI = None
 
 # ── Compatibility shim ────────────────────────────────────────────────────────
 # Guard against older FSThreadingASME that may not export bolt_nominal.
@@ -140,7 +144,9 @@ FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Le
                    # Metric data-driven thread properties (metric_thread_dia.csv)
                    'Thread_Pitch', 'Thread_Class_ISO',
                    'Thread_Root',
-                   'Thread_Pitch_Nut', 'Thread_Class_Nut']
+                   'Thread_Pitch_Nut', 'Thread_Class_Nut',
+                   # ASME nut internal thread properties (un_unr_internal_thread_minor_dia.csv)
+                   'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME']
 
 HexHeadGroup        = translate("FastenerCmd", "Hex head")
 HexagonSocketGroup  = translate("FastenerCmd", "Hexagon socket")
@@ -490,13 +496,16 @@ def _set_thread_props_visibility_inner(fp, thread_on):
                 fp.setEditorMode(_p, 2)
 
     elif is_asme_type and has_nut:
-        # ASME nut — hide all bolt props
+        # ASME nut — show ASME nut props, hide all bolt and metric nut props
         for _p in ("Thread_Type", "Thread_TPI", "Thread_TPI_Custom",
                    "Thread_Class", "Thread_Length", "ThreadPitch",
                    "Thread_Pitch", "Thread_Class_ISO",
                    "Thread_Pitch_Nut", "Thread_Class_Nut", "Thread_Root"):
             if hasattr(fp, _p):
                 fp.setEditorMode(_p, 2)
+        # Show ASME internal nut props
+        if _TAI is not None:
+            _TAI.set_asme_nut_visibility(fp, thread_on)
 
     elif is_metric_nut:
         # Metric nut — show ONLY nut props, hide all bolt props
@@ -660,6 +669,44 @@ class FSScrewObject(FSBaseObject):
             return
 
         if prop in ("Thread_Class_Nut", "Thread_Root") and hasattr(fp, prop):
+            FastenerBase.FSCache.clear()
+            return
+
+        # ── ASME nut type/TPI/class cascade ─────────────────────────────────
+        if prop == "Thread_Type_Nut" and hasattr(fp, "Thread_Type_Nut")                 and _TAI is not None                 and str(getattr(fp, "Type", "")).startswith("ASME"):
+            _dia_an = str(getattr(fp, "Diameter", "") or "")
+            _type_an = str(getattr(fp, "Thread_Type_Nut", "") or "")
+            if _type_an and hasattr(fp, "Thread_TPI_Nut"):
+                _ntpis = _TAI.valid_tpis_for_dia_type(_dia_an, _type_an) or ["8"]
+                try:
+                    _cur_tpi = str(fp.Thread_TPI_Nut)
+                    fp.Thread_TPI_Nut = _ntpis
+                    _rest_tpi = _cur_tpi if _cur_tpi in _ntpis else _ntpis[0]
+                    if str(fp.Thread_TPI_Nut) != _rest_tpi:
+                        fp.Thread_TPI_Nut = _rest_tpi
+                except Exception:
+                    pass
+            FastenerBase.FSCache.clear()
+            return
+
+        if prop == "Thread_TPI_Nut" and hasattr(fp, "Thread_TPI_Nut")                 and _TAI is not None                 and str(getattr(fp, "Type", "")).startswith("ASME"):
+            _dia_an  = str(getattr(fp, "Diameter", "") or "")
+            _type_an = str(getattr(fp, "Thread_Type_Nut", "UNC") or "UNC")
+            _tpi_an  = str(getattr(fp, "Thread_TPI_Nut", "") or "")
+            if _tpi_an and hasattr(fp, "Thread_Class_Nut_ASME"):
+                _ncls = _TAI.valid_classes_for_dia_tpi_type(_dia_an, _tpi_an, _type_an) or ["2B"]
+                try:
+                    _cur_cls = str(fp.Thread_Class_Nut_ASME)
+                    fp.Thread_Class_Nut_ASME = _ncls
+                    _rest_cls = _cur_cls if _cur_cls in _ncls else                                 ("2B" if "2B" in _ncls else _ncls[0])
+                    if str(fp.Thread_Class_Nut_ASME) != _rest_cls:
+                        fp.Thread_Class_Nut_ASME = _rest_cls
+                except Exception:
+                    pass
+            FastenerBase.FSCache.clear()
+            return
+
+        if prop == "Thread_Class_Nut_ASME" and hasattr(fp, prop):
             FastenerBase.FSCache.clear()
             return
 
@@ -992,6 +1039,76 @@ class FSScrewObject(FSBaseObject):
                     pass
                 obj.setEditorMode("Thread_Class_Nut", 2)
 
+        # ── ASME nut: Thread_Type_Nut + Thread_TPI_Nut + Thread_Class_Nut_ASME ──
+        _is_asme_nut = _has_nut_t and _is_asme_t and _TAI is not None
+        if _is_asme_nut:
+            _dia_asme_nut = str(getattr(obj, "Diameter", diameter) or "")
+            if _dia_asme_nut in ("Auto", "", "Custom"):
+                try:
+                    _dia_asme_nut = screwMaker.AutoDiameter(type, None, None, False)
+                except Exception:
+                    _dia_asme_nut = diameter or ""
+            # Thread_Type_Nut — series dropdown (UNC, UNF, UN, UNEF, UNS)
+            if not hasattr(obj, "Thread_Type_Nut"):
+                _atypes = _TAI.valid_types_for_dia(_dia_asme_nut) or ["UNC"]
+                obj.addProperty("App::PropertyEnumeration", "Thread_Type_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Type_Nut — ASME B1.1 series (UNC/UNF/UN/UNEF)")
+                ).Thread_Type_Nut = _atypes
+                try:
+                    _def_at = "UNC" if "UNC" in _atypes else _atypes[0]
+                    obj.Thread_Type_Nut = _def_at
+                except Exception:
+                    pass
+                obj.setEditorMode("Thread_Type_Nut", 2)
+            # Thread_TPI_Nut — TPI dropdown
+            if not hasattr(obj, "Thread_TPI_Nut"):
+                _at_now = ""
+                try:
+                    _at_now = str(obj.Thread_Type_Nut)
+                except Exception:
+                    pass
+                _at_now = _at_now or "UNC"
+                _atpis = _TAI.valid_tpis_for_dia_type(_dia_asme_nut, _at_now) or ["8"]
+                obj.addProperty("App::PropertyEnumeration", "Thread_TPI_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_TPI_Nut — ASME B1.1 threads per inch")
+                ).Thread_TPI_Nut = _atpis
+                try:
+                    obj.Thread_TPI_Nut = _atpis[0]
+                except Exception:
+                    pass
+                obj.setEditorMode("Thread_TPI_Nut", 2)
+            # Thread_Class_Nut_ASME — class dropdown (1B/2B/3B)
+            if not hasattr(obj, "Thread_Class_Nut_ASME"):
+                _at_now2 = ""
+                try:
+                    _at_now2 = str(obj.Thread_Type_Nut)
+                except Exception:
+                    pass
+                _at_now2 = _at_now2 or "UNC"
+                _atpi_now = ""
+                try:
+                    _atpi_now = str(obj.Thread_TPI_Nut)
+                except Exception:
+                    pass
+                _atpi_now = _atpi_now or "8"
+                _ancls = _TAI.valid_classes_for_dia_tpi_type(
+                    _dia_asme_nut, _atpi_now, _at_now2) or ["2B"]
+                obj.addProperty("App::PropertyEnumeration", "Thread_Class_Nut_ASME",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Class_Nut_ASME — ASME B1.1 (2B=standard)")
+                ).Thread_Class_Nut_ASME = _ancls
+                try:
+                    _def_ancls = "2B" if "2B" in _ancls else _ancls[0]
+                    obj.Thread_Class_Nut_ASME = _def_ancls
+                except Exception:
+                    pass
+                obj.setEditorMode("Thread_Class_Nut_ASME", 2)
+
         if "TType" in params and _is_asme_t and _has_ext_t \
                 and not hasattr(obj, "Thread_Type"):
             _nom_t    = _TA.bolt_nominal(getattr(obj, "Diameter", "") or "")
@@ -1212,7 +1329,88 @@ class FSScrewObject(FSBaseObject):
         has_ext   = "TThread" in params
 
         _is_metric_nut_exec = thread_on and not asme_type and "TNutThread" in params
+        _is_asme_nut_exec   = thread_on and asme_type and "TNutThread" in params
         _is_metric_bolt_exec = thread_on and not asme_type and "TThread" in params
+
+        # ── ASME nut execute: populate Thread_Type_Nut, Thread_TPI_Nut, Thread_Class_Nut_ASME
+        if _is_asme_nut_exec and _TAI is not None:
+            _dia_an_e = str(self.calc_diam or fp.Diameter or "")
+
+            # Thread_Type_Nut
+            _atypes_e = _TAI.valid_types_for_dia(_dia_an_e) or ["UNC"]
+            if not hasattr(fp, "Thread_Type_Nut"):
+                fp.addProperty("App::PropertyEnumeration", "Thread_Type_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Type_Nut — ASME B1.1 series (UNC/UNF/UN/UNEF)")
+                ).Thread_Type_Nut = _atypes_e
+                try: fp.Thread_Type_Nut = "UNC" if "UNC" in _atypes_e else _atypes_e[0]
+                except Exception: pass
+            else:
+                try:
+                    _cur_at = str(fp.Thread_Type_Nut)
+                    fp.Thread_Type_Nut = _atypes_e
+                    fp.Thread_Type_Nut = _cur_at if _cur_at in _atypes_e else                                          ("UNC" if "UNC" in _atypes_e else _atypes_e[0])
+                except Exception: pass
+
+            # Thread_TPI_Nut
+            _at_e = ""
+            try: _at_e = str(fp.Thread_Type_Nut)
+            except Exception: pass
+            _at_e = _at_e or "UNC"
+            _atpis_e = _TAI.valid_tpis_for_dia_type(_dia_an_e, _at_e) or ["8"]
+            if not hasattr(fp, "Thread_TPI_Nut"):
+                fp.addProperty("App::PropertyEnumeration", "Thread_TPI_Nut",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_TPI_Nut — ASME B1.1 threads per inch")
+                ).Thread_TPI_Nut = _atpis_e
+                try: fp.Thread_TPI_Nut = _atpis_e[0]
+                except Exception: pass
+            else:
+                try:
+                    _cur_atpi = str(fp.Thread_TPI_Nut)
+                    fp.Thread_TPI_Nut = _atpis_e
+                    fp.Thread_TPI_Nut = _cur_atpi if _cur_atpi in _atpis_e else _atpis_e[0]
+                except Exception: pass
+
+            # Thread_Class_Nut_ASME
+            _atpi_e = ""
+            try: _atpi_e = str(fp.Thread_TPI_Nut)
+            except Exception: pass
+            _atpi_e = _atpi_e or "8"
+            _ancls_e = _TAI.valid_classes_for_dia_tpi_type(_dia_an_e, _atpi_e, _at_e) or ["2B"]
+            if not hasattr(fp, "Thread_Class_Nut_ASME"):
+                fp.addProperty("App::PropertyEnumeration", "Thread_Class_Nut_ASME",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_Class_Nut_ASME — ASME B1.1 (2B=standard)")
+                ).Thread_Class_Nut_ASME = _ancls_e
+                try:
+                    _def_ancls_e = "2B" if "2B" in _ancls_e else _ancls_e[0]
+                    fp.Thread_Class_Nut_ASME = _def_ancls_e
+                except Exception: pass
+            else:
+                try:
+                    _cur_ancls = str(fp.Thread_Class_Nut_ASME)
+                    fp.Thread_Class_Nut_ASME = _ancls_e
+                    fp.Thread_Class_Nut_ASME = _cur_ancls if _cur_ancls in _ancls_e else                                                ("2B" if "2B" in _ancls_e else _ancls_e[0])
+                except Exception: pass
+
+            # Store for FSmakeHexNut bore lookup
+            self.Thread_Type_Nut     = str(getattr(fp, "Thread_Type_Nut",     "UNC") or "UNC")
+            self.Thread_TPI_Nut      = str(getattr(fp, "Thread_TPI_Nut",      "")   or "")
+            self.Thread_Class_Nut_ASME = str(getattr(fp, "Thread_Class_Nut_ASME", "2B") or "2B")
+
+            # Resolve calc_tpi and calc_pitch from selected TPI
+            _tpi_val = _TAI.resolve_nut_tpi(self)
+            if _tpi_val and _tpi_val > 0:
+                self.calc_tpi   = _tpi_val
+                self.calc_pitch = 25.4 / _tpi_val
+            else:
+                self.calc_tpi   = None
+
+            _TAI.set_asme_nut_visibility(fp, True)
 
         if _is_metric_nut_exec and _TMI is not None:
             _dia_pre = str(self.calc_diam or fp.Diameter or "")
@@ -1618,6 +1816,14 @@ class FSScrewObject(FSBaseObject):
         if thread_on and not asme_type:
             self.Thread_Pitch = str(getattr(fp, "Thread_Pitch", "") or "")
             self.Thread_Class_ISO = str(getattr(fp, "Thread_Class_ISO", "") or "6g")
+        # Store ASME nut internal thread params for FSmakeHexNut bore lookup
+        if not hasattr(self, "Thread_Type_Nut"):     self.Thread_Type_Nut     = "UNC"
+        if not hasattr(self, "Thread_TPI_Nut"):      self.Thread_TPI_Nut      = ""
+        if not hasattr(self, "Thread_Class_Nut_ASME"): self.Thread_Class_Nut_ASME = "2B"
+        if thread_on and asme_type and "TNutThread" in params:
+            self.Thread_Type_Nut     = str(getattr(fp, "Thread_Type_Nut",     "UNC") or "UNC")
+            self.Thread_TPI_Nut      = str(getattr(fp, "Thread_TPI_Nut",      "")   or "")
+            self.Thread_Class_Nut_ASME = str(getattr(fp, "Thread_Class_Nut_ASME", "2B") or "2B")
 
         screwMaker.updateFastenerParameters()
         self.BackupObject(fp)

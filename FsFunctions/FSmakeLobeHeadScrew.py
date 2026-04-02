@@ -84,8 +84,11 @@ def makeLobeHeadScrew(self, fa):
     Thread cutting is delegated entirely to FSThreadingASME.py.
     This function only builds head + flange + shank geometry.
     """
-    # dimTable: b, G, H, K, C, B, T, r1  (P removed — from TPI)
-    b, G, H, K, C, B, T, r1 = fa.dimTable
+    # dimTable: b, G, H_max, H_min, K_max, K_min, C_max, C_min, B, T, r1
+    b, G, H_max, H_min, K_max, K_min, C_max, C_min, B, T, r1 = fa.dimTable
+    H = H_max
+    K = K_max
+    C = C_max
     dia = self.getDia(fa.calc_diam, False)
     L   = float(fa.calc_len) if fa.calc_len else 50.0
 

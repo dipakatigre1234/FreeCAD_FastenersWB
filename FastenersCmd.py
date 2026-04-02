@@ -272,15 +272,19 @@ FSScrewCommandTable = {
     "ASMEB18.2.2.1A":(translate("FastenerCmd", "UNC Hex Machine screw nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.1B":(translate("FastenerCmd", "UNC Square machine screw nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.2": (translate("FastenerCmd", "UNC Square nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.4A":(translate("FastenerCmd", "UNC Hexagon nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.4B":(translate("FastenerCmd", "UNC Hexagon thin nuts"), NutGroup, NutParameters),
-    # ── PATCH 1: ASME B18.2.2 Table 10 — Heavy Hex Nut and Heavy Hex Jam Nut ──
-    "ASMEB18.2.2.10A":(translate("FastenerCmd", "UNC Heavy hex nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.10B":(translate("FastenerCmd", "UNC Heavy hex jam nuts"), NutGroup, NutParameters),
-    # ────────────────────────────────────────────────────────────────────────────
-    "ASMEB18.2.2.5": (translate("FastenerCmd", "UNC Hex slotted nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.12":(translate("FastenerCmd", "UNC Hex flange nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.13":(translate("FastenerCmd", "UNC Hex coupling nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.3": (translate("FastenerCmd", "UNC Hexagon nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.5": (translate("FastenerCmd", "UNC Hexagon thin nuts"), NutGroup, NutParameters),
+    # ── ASME B18.2.2 Table 11 — Heavy Hex Nut and Heavy Hex Jam Nut ──────────
+    "ASMEB18.2.2.11A":(translate("FastenerCmd", "UNC Heavy hex nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.11B":(translate("FastenerCmd", "UNC Heavy hex jam nuts"), NutGroup, NutParameters),
+    # ── ASME B18.2.2 Table 6/8 — Hex Slotted Nuts ────────────────────────────
+    "ASMEB18.2.2.6": (translate("FastenerCmd", "UNC Hex slotted thin nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.8": (translate("FastenerCmd", "UNC Hex slotted wide nuts"), NutGroup, NutParameters),
+    # ── ASME B18.2.2 Table 13A/13B — Hex Flange Nuts ─────────────────────────
+    "ASMEB18.2.2.13A":(translate("FastenerCmd", "UNC Hex flange nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.13B":(translate("FastenerCmd", "UNC Large hex flange nuts"), NutGroup, NutParameters),
+    # ── ASME B18.2.2 Table 14 — Hex Coupling Nuts ────────────────────────────
+    "ASMEB18.2.2.14":(translate("FastenerCmd", "UNC Hex coupling nuts"), NutGroup, NutParameters),
     "ASMEB18.6.9A":  (translate("FastenerCmd", "Wing nuts, type A"), NutGroup, NutParameters),
     "DIN315":   (translate("FastenerCmd", "Wing nuts"), NutGroup, NutParameters),
     "DIN557":   (translate("FastenerCmd", "Square nuts"), NutGroup, NutParameters),

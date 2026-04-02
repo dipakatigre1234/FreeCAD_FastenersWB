@@ -49,10 +49,11 @@ def makeHexNut(self, fa):
     - ISO 4034 Hexagon regular nuts (style 1) — Product grade C
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
     - ISO 7414 Hexagon heavy nuts — metric
-    - ASME B18.2.2 machine screw, thin, and regular hexagon nuts
-    - ASME B18.2.2 Table 10 Heavy Hex Nuts (10A) and Heavy Hex Jam Nuts (10B)
+    - ASME B18.2.2 Table 3  — Hex Machine Screw Nuts (ASMEB18.2.2.3)
+    - ASME B18.2.2 Table 5  — Regular Hexagon Nuts (ASMEB18.2.2.5)
+    - ASME B18.2.2 Table 11 — Heavy Hex Nuts (11A) and Heavy Hex Jam Nuts (11B)
     - DIN 6334 3xD length hexagon nuts
-    - ASME B18.2.2 coupling nuts
+    - ASME B18.2.2 Table 14 — Hex Coupling Nuts (ASMEB18.2.2.14)
 
     Thread diameter offsets (Dipak):
       Metric (ISO/DIN): thread_dia = dia + 0.05 * P
@@ -61,8 +62,12 @@ def makeHexNut(self, fa):
 
     dimTable column layout per type:
       ISO7414              : P, c, da, dw, e, m, mw, s_nom
-      ASMEB18.2.2.10A      : P, da, e, m_a, m_b, s  → Heavy Hex Nut     (m = m_a)
-      ASMEB18.2.2.10B      : P, da, e, m_a, m_b, s  → Heavy Hex Jam Nut (m = m_b)
+      ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = m_max, s = s_max
+      ASMEB18.2.2.3        : TPI, F_max, F_min, H_max, H_min (inches) → m = H_max*25.4, s = F_max*25.4
+      ASMEB18.2.2.5        : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
+      ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = m_a_max
+      ASMEB18.2.2.11B      : same as 11A → m = m_b_max (jam nut)
+      ASMEB18.2.2.14       : TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) → Coupling Nut
     """
 
     SType = fa.baseType
@@ -97,28 +102,40 @@ def makeHexNut(self, fa):
     elif SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, _, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
-        P, da, _, m, s = fa.dimTable
-    elif SType == 'ASMEB18.2.2.4A':
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_a
-    elif SType == 'ASMEB18.2.2.4B':
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_b
-    elif SType == 'ASMEB18.2.2.10A':
-        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Nut
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_a
-    elif SType == 'ASMEB18.2.2.10B':
-        # CSV columns: P, da, e, m_a, m_b, s  — Heavy Hex Jam Nut
-        P, da, _, m_a, m_b, s = fa.dimTable
-        m = m_b
+        # CSV columns: P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm)
+        P, da, e_max, e_min, m_max, m_min, s_max, s_min = fa.dimTable
+        m = m_max
+        s = s_max
+    elif SType == 'ASMEB18.2.2.3':
+        # CSV columns: TPI, F_max, F_min, H_max, H_min (all in inches)
+        TPI, F_max, F_min, H_max, H_min = fa.dimTable
+        P = 1.0 / TPI * 25.4
+        s = F_max * 25.4
+        m = H_max * 25.4
+        da = dia
+    elif SType == 'ASMEB18.2.2.5':
+        # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
+        P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min = fa.dimTable
+        m = m_a_max
+        s = s_max
+    elif SType == 'ASMEB18.2.2.11A':
+        # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
+        P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
+        m = m_a_max
+        s = s_max
+    elif SType == 'ASMEB18.2.2.11B':
+        # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
+        P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
+        m = m_b_max
+        s = s_max
     elif SType == "DIN6334":
         P, da, m, s = fa.dimTable
-    elif SType == "ASMEB18.2.2.13":
-        TPI, F, H = fa.dimTable
+    elif SType == "ASMEB18.2.2.14":
+        # CSV columns: TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) — Hex Coupling Nut
+        TPI, F_min, F_max, G_min, G_max, H_min, H_max = fa.dimTable
         P = 1.0 / TPI * 25.4
-        m = H * 25.4
-        s = F * 25.4
+        m = H_max
+        s = F_max
         da = dia
 
     try:

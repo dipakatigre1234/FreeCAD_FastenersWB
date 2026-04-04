@@ -86,13 +86,63 @@ def makeThreadedRod(self, fa):
             P = fa.calc_pitch
 
     # ── 3. Rod body revolve profile ───────────────────────────────────────────
+    #
+    #  cham = 1 × pitch — used for:
+    #    • end chamfers (both ends)
+    #    • transition chamfers between threaded and smooth zones
+    #
+    #  Partial threading profile (Thread_Length = L, half = L/2):
+    #
+    #    z = 0                     ← top face
+    #    z = -cham                 ← end of top end chamfer (r = d_eff/2)
+    #    z = -(half - t_c)         ← thread zone before transition [if room]
+    #    z = -half                 ← taper to smooth (r = d_eff/2 - t_c)
+    #    z = -(length - half)      ← smooth zone, parallel cylinder
+    #    z = -(length-half + t_c)  ← taper back out to thread OD
+    #    z = -(length - cham)      ← thread zone before bottom end chamfer [if room]
+    #    z = -length               ← bottom end chamfer
+    #
+    #  Fully threaded: simple cylinder, no transition points.
+    #
     cham   = P          # chamfer depth at both ends = 1 × pitch
     length = fa.calc_len
+
+    # Preview thread length to decide body profile shape
+    _raw_tl_prev = getattr(fa, "calc_thread_length", 0.0) or 0.0
+    _half_prev   = float(_raw_tl_prev) / 2.0
+    # Only add transition chamfers when there is a meaningful unthreaded middle zone
+    _partial_body = (_raw_tl_prev > 0) and (_raw_tl_prev < length) and (_half_prev > cham)
+
     fm = FSFaceMaker()
     fm.AddPoint(0,                  0)
     fm.AddPoint(d_eff / 2 - cham,   0)
     fm.AddPoint(d_eff / 2,         -cham)
-    fm.AddPoint(d_eff / 2,         -length + cham)
+
+    if _partial_body:
+        # t_c = transition chamfer depth: small (25 % of half, max = cham)
+        t_c = min(cham, _half_prev * 0.25)
+
+        _z_top_mid  = _half_prev - t_c          # last point in top thread zone
+        _z_sm_top   = _half_prev                # smooth zone top
+        _z_sm_bot   = length - _half_prev       # smooth zone bottom
+        _z_bot_mid  = length - _half_prev + t_c # first point in bottom thread zone
+
+        # Thread zone (top) — only if there is space between end chamfer and transition
+        if _z_top_mid > cham + 1e-6:
+            fm.AddPoint(d_eff / 2,          -_z_top_mid)
+        # Taper into smooth zone
+        fm.AddPoint(d_eff / 2 - t_c,       -_z_sm_top)
+        # Smooth zone (parallel cylinder, slightly smaller OD than thread peaks)
+        fm.AddPoint(d_eff / 2 - t_c,       -_z_sm_bot)
+        # Taper out of smooth zone
+        fm.AddPoint(d_eff / 2,             -_z_bot_mid)
+        # Thread zone (bottom) — only if there is space between transition and end chamfer
+        if _z_bot_mid < length - cham - 1e-6:
+            fm.AddPoint(d_eff / 2,          -(length - cham))
+    else:
+        # Fully threaded or thread zone too short for transition: simple cylinder
+        fm.AddPoint(d_eff / 2,             -length + cham)
+
     fm.AddPoint(d_eff / 2 - cham,  -length)
     fm.AddPoint(0,                 -length)
     screw = self.RevolveZ(fm.GetFace())

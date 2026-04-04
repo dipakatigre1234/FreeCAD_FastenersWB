@@ -62,11 +62,11 @@ def makeHexNut(self, fa):
 
     dimTable column layout per type:
       ISO7414              : P, c, da, dw, e, m, mw, s_nom
-      ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = m_max, s = s_max
+      ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = mean(m), s = mean(s)
       ASMEB18.2.2.3        : TPI, F_max, F_min, H_max, H_min (inches) → m = H_max*25.4, s = F_max*25.4
       ASMEB18.2.2.5        : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
-      ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = m_a_max
-      ASMEB18.2.2.11B      : same as 11A → m = m_b_max (jam nut)
+      ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = mean(m_a)
+      ASMEB18.2.2.11B      : same as 11A → m = mean(m_b) (jam nut)
       ASMEB18.2.2.14       : TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) → Coupling Nut
     """
 

@@ -72,17 +72,17 @@ def _makeHexNutWithTaperedFlange(self, fa):
             _,
             _,
             m_max,
-            _,
+            m_min,
             _,
             s_max,
-            _,
+            s_min,
             _,
         ) = fa.dimTable
         c = c_min
         da = (d_a_max + d_a_min) / 2
         dc = d_c_max
-        m = m_max
-        s = s_max
+        m = (m_max + m_min) / 2
+        s = (s_max + s_min) / 2
         flange_edge_rounded = True
     inner_rad = dia / 2 - P * 0.625 * sqrt3 / 2
     inner_cham_ht = tan15 * (da / 2 - inner_rad)

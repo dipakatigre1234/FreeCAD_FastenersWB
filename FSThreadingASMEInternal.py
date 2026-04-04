@@ -185,17 +185,16 @@ def _clean_dia(dia_str):
 def valid_types_for_dia(dia_str):
     """Return ordered list of series (thread types) available for this diameter.
 
-    e.g. valid_types_for_dia("1") → ["UNC", "UNF", "UNEF", "UN", "UNS", "UNR"]
+    e.g. valid_types_for_dia("1") → ["UNC", "UNF", "UNEF", "UN", "UNS"]
 
-    UNR is appended when UN is present — UNR shares the same CSV rows as UN
-    (UNR is an external-only form; the nut internal thread is the same UN table).
+    UNR is intentionally excluded — UNR is an external-thread-only designation
+    (rounded root profile for bolts/screws). Nuts use internal UN thread form;
+    UNR does NOT apply to internal threads.
     """
     dia = _clean_dia(dia_str)
     series_set = {k[2] for k in _asme_nut_table() if k[0] == dia}
     order  = ["UNC", "UNF", "UNEF", "UN", "UNS"]
     result = [s for s in order if s in series_set]
-    if "UN" in result:
-        result.append("UNR")   # UNR shares UN rows
     return result or ["UNC"]
 
 

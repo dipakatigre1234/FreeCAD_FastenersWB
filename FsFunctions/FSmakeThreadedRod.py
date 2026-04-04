@@ -87,49 +87,55 @@ def makeThreadedRod(self, fa):
 
     # ── 3. Rod body revolve profile ───────────────────────────────────────────
     #
-    #  cham = 1 × pitch for all chamfers (ends + inner transitions).
+    #  Two diameters are used:
+    #    d_eff  — effective thread OD from FSThreadingASME / FSThreadingMetric
+    #             (threaded zones + end chamfers)
+    #    dia    — user-specified nominal diameter (e.g. 5/8" = 15.875 mm)
+    #             (unthreaded smooth middle zone)
     #
-    #  Fully threaded  (Thread_Length = 0):
-    #    Simple cylinder, chamfer at each outer end only.
+    #  Fully threaded (Thread_Length = 0):
+    #    Simple cylinder at d_eff, chamfer at each outer end.
     #
-    #  Partial threading  (Thread_Length = L,  half = L/2):
-    #    Transition chamfers at the inner boundary of each thread zone mirror
-    #    the outer end chamfers — this gives a smooth thread exit toward the
-    #    unthreaded middle section, identical in style to the rod end chamfers.
+    #  Partial threading (Thread_Length = L,  half = L/2):
+    #    Transition chamfer goes from thread OD (d_eff/2) to smooth OD (dia/2)
+    #    — same style as the outer end chamfers, over 1 × pitch axial distance.
     #
-    #    z = 0              →  top face
-    #    z = -cham          →  top end chamfer end        (r = d_eff/2)
-    #    z = -(half-cham)   →  top thread zone            (r = d_eff/2)
-    #    z = -half          →  inner taper to smooth      (r = d_eff/2 - cham)
-    #    z = -(len-half)    →  smooth zone end            (r = d_eff/2 - cham)
-    #    z = -(len-half+cham) →  back to thread OD        (r = d_eff/2)
-    #    z = -(len-cham)    →  bottom thread zone         (r = d_eff/2)
-    #    z = -len           →  bottom end chamfer         (r = d_eff/2 - cham)
+    #    z = 0                → top face
+    #    z = -cham            → top end chamfer end           (r = d_eff/2)
+    #    z = -(half-cham)     → top thread zone               (r = d_eff/2)
+    #    z = -half            → transition → smooth OD        (r = dia/2)
+    #    z = -(len-half)      → smooth zone end               (r = dia/2)
+    #    z = -(len-half+cham) → transition back → thread OD   (r = d_eff/2)
+    #    z = -(len-cham)      → bottom thread zone            (r = d_eff/2)
+    #    z = -len             → bottom end chamfer            (r = d_eff/2 - cham)
     #
-    cham   = P          # chamfer depth at both ends = 1 × pitch
+    cham   = P          # chamfer depth (axial) = 1 × pitch
     length = fa.calc_len
 
     _raw_tl = getattr(fa, "calc_thread_length", 0.0) or 0.0
     _half   = float(_raw_tl) / 2.0
-    # Use partial profile only when there is room for inner chamfers
+    # Use partial profile only when there is room for transition chamfers
     _partial = _raw_tl > 0 and _raw_tl < length and _half > 2 * cham
 
+    _r_thread = d_eff / 2.0   # thread zone radius  (from threading module)
+    _r_smooth = dia  / 2.0    # smooth zone radius  (user nominal diameter)
+
     fm = FSFaceMaker()
-    fm.AddPoint(0,                  0)
-    fm.AddPoint(d_eff / 2 - cham,   0)
-    fm.AddPoint(d_eff / 2,         -cham)              # top end chamfer
+    fm.AddPoint(0,              0)
+    fm.AddPoint(_r_thread - cham, 0)
+    fm.AddPoint(_r_thread,     -cham)              # top end chamfer
 
     if _partial:
-        fm.AddPoint(d_eff / 2,     -(_half - cham))    # top thread zone
-        fm.AddPoint(d_eff / 2 - cham, -_half)          # inner taper → smooth
-        fm.AddPoint(d_eff / 2 - cham, -(length-_half)) # smooth zone (parallel)
-        fm.AddPoint(d_eff / 2,  -(length - _half + cham))  # taper back to thread OD
-        fm.AddPoint(d_eff / 2,     -(length - cham))   # bottom thread zone
+        fm.AddPoint(_r_thread, -(_half - cham))    # top thread zone
+        fm.AddPoint(_r_smooth, -_half)             # transition → smooth OD (user dia)
+        fm.AddPoint(_r_smooth, -(length - _half))  # smooth zone (parallel at user dia)
+        fm.AddPoint(_r_thread, -(length - _half + cham))  # transition back → thread OD
+        fm.AddPoint(_r_thread, -(length - cham))   # bottom thread zone
     else:
-        fm.AddPoint(d_eff / 2,     -length + cham)     # straight to bottom chamfer
+        fm.AddPoint(_r_thread, -length + cham)     # fully threaded straight section
 
-    fm.AddPoint(d_eff / 2 - cham,  -length)
-    fm.AddPoint(0,                 -length)
+    fm.AddPoint(_r_thread - cham, -length)
+    fm.AddPoint(0,              -length)
     screw = self.RevolveZ(fm.GetFace())
 
     # ── 4. Threading ──────────────────────────────────────────────────────────

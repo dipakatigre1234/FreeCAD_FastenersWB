@@ -104,38 +104,38 @@ def makeHexNut(self, fa):
     elif SType == 'ASMEB18.2.2.1A':
         # CSV columns: P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm)
         P, da, e_max, e_min, m_max, m_min, s_max, s_min = fa.dimTable
-        m = m_max
-        s = s_max
+        m = (m_max + m_min) / 2
+        s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.3':
         # CSV columns: TPI, F_max, F_min, H_max, H_min (all in inches)
         TPI, F_max, F_min, H_max, H_min = fa.dimTable
         P = 1.0 / TPI * 25.4
-        s = F_max * 25.4
-        m = H_max * 25.4
+        s = ((F_max + F_min) / 2) * 25.4
+        m = ((H_max + H_min) / 2) * 25.4
         da = dia
     elif SType == 'ASMEB18.2.2.5':
         # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
         P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min = fa.dimTable
-        m = m_a_max
-        s = s_max
+        m = (m_a_max + m_a_min) / 2
+        s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.11A':
         # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
         P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
-        m = m_a_max
-        s = s_max
+        m = (m_a_max + m_a_min) / 2
+        s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.11B':
         # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
         P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
-        m = m_b_max
-        s = s_max
+        m = (m_b_max + m_b_min) / 2
+        s = (s_max + s_min) / 2
     elif SType == "DIN6334":
         P, da, m, s = fa.dimTable
     elif SType == "ASMEB18.2.2.14":
         # CSV columns: TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) — Hex Coupling Nut
         TPI, F_min, F_max, G_min, G_max, H_min, H_max = fa.dimTable
         P = 1.0 / TPI * 25.4
-        m = H_max
-        s = F_max
+        m = (H_max + H_min) / 2
+        s = (F_max + F_min) / 2
         da = dia
 
     try:

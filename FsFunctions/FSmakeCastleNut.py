@@ -97,10 +97,10 @@ def _makeSlottedNut(self, fa):
         # CSV columns: TPI, F_max, F_min, G_max, G_min, H_max, H_min, T_max, T_min, S_max, S_min (mm)
         TPI, F_max, F_min, G_max, G_min, H_max, H_min, T_max, T_min, S_max, S_min = fa.dimTable
         P = 1 / TPI * 25.4
-        m = H_max
-        w = T_max
-        s = F_max
-        n = S_max
+        m = (H_max + H_min) / 2
+        w = (T_max + T_min) / 2
+        s = (F_max + F_min) / 2
+        n = (S_max + S_min) / 2
         ns = 6
     else:
         raise NotImplementedError(f"Unknown fastener type: {fa.baseType}")

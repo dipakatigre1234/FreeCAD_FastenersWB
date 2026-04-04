@@ -86,9 +86,9 @@ def makeLobeHeadScrew(self, fa):
     """
     # dimTable: b, G, H_max, H_min, K_max, K_min, C_max, C_min, B, T, r1
     b, G, H_max, H_min, K_max, K_min, C_max, C_min, B, T, r1 = fa.dimTable
-    H = H_max
-    K = K_max
-    C = C_max
+    H = (H_max + H_min) / 2
+    K = (K_max + K_min) / 2
+    C = (C_max + C_min) / 2
     dia = self.getDia(fa.calc_diam, False)
     L   = float(fa.calc_len) if fa.calc_len else 50.0
 

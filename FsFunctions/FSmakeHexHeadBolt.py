@@ -60,18 +60,18 @@ def makeHexHeadBolt(self, fa):
     elif fa.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3"):
         # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
         b1_tbl, b2_tbl, P_tbl, c, _dw_unused, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
-        e = e_max
-        k = k_max
-        s = s_max
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
         dw    = None
 
     elif fa.baseType == "ASMEB18.2.1.6":
         # CSV columns: b, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
         b_tbl, P_tbl, c, _dw6, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
-        e = e_max
-        k = k_max
-        s = s_max
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
         dw = None
         if length > 6 * 25.4:
             b_tbl += 6.35
@@ -79,9 +79,9 @@ def makeHexHeadBolt(self, fa):
     elif fa.baseType == "ASMEB18.2.1.7":
         # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
         b1_tbl, b2_tbl, P_tbl, c, _dw7, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
-        e = e_max
-        k = k_max
-        s = s_max
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
         dw    = None
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
 

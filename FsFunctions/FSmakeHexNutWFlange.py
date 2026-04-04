@@ -56,10 +56,10 @@ def _makeHexNutWithTaperedFlange(self, fa):
         # CSV columns: TPI, F_min, F_max, G_min, G_max, B_min, B_max, H_min, H_max, J, K (mm)
         TPI, F_min, F_max, G_min, G_max, B_min, B_max, H_min, H_max, J, K = fa.dimTable
         P = 1 / TPI * 25.4
-        s = F_max
-        dc = B_max
+        s = (F_max + F_min) / 2
+        dc = (B_max + B_min) / 2
         da = 1.05 * dia
-        m = H_max
+        m = (H_max + H_min) / 2
         c = K
         flange_edge_rounded = False
     elif fa.baseType in ["ISO4161", "ISO10663"]:

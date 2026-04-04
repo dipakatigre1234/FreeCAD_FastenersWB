@@ -263,8 +263,12 @@ def makeHexNut(self, fa):
     head = self.RevolveZ(fm.GetFace())
 
     # ── Hexagon prism cut ─────────────────────────────────────────────────────
+    # removeSplitter() merges the coplanar face patches on each flat that result
+    # from the boolean common of three distinct outer surface segments
+    # (bottom chamfer cone + cylinder + top chamfer cone) with the hex prism.
+    # Without it, each flat shows as two or three separate faces with seam lines.
     extrude = self.makeHexPrism(s, m)
-    nut = head.common(extrude)
+    nut = head.common(extrude).removeSplitter()
 
     # ── Modelled threads (inner thread cutter) ────────────────────────────────
     #

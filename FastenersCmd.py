@@ -111,7 +111,7 @@ ScrewParametersLC = {"Type", "Diameter", "MatchOuter",
                      "TPitch", "TLength", "TThread", "TType"}
 RodParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                  "LeftHanded", "lengthArbitrary", "DiameterCustom", "PitchCustom",
-                 "TPitch", "TLength", "TThread"}
+                 "TPitch", "TLength", "TThread", "TType"}
 NutParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded",
                   "TNutThread", "TPitch"}
 WoodInsertParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded"}

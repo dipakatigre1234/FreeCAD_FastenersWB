@@ -126,11 +126,22 @@ def makeThreadedRod(self, fa):
     fm.AddPoint(_r_thread,     -cham)              # top end chamfer
 
     if _partial:
-        fm.AddPoint(_r_thread, -(_half - cham))    # top thread zone
-        fm.AddPoint(_r_smooth, -_half)             # transition → smooth OD (user dia)
-        fm.AddPoint(_r_smooth, -(length - _half))  # smooth zone (parallel at user dia)
-        fm.AddPoint(_r_thread, -(length - _half + cham))  # transition back → thread OD
-        fm.AddPoint(_r_thread, -(length - cham))   # bottom thread zone
+        #  TOP inner boundary  (thread zone exits → smooth section)
+        #    same style as outer end chamfer: body shrinks to relief depth,
+        #    then steps UP to smooth OD — gives smooth thread exit on both sides
+        fm.AddPoint(_r_thread,        -(_half - cham))   # top thread zone
+        fm.AddPoint(_r_thread - cham, -_half)            # contract → relief (smooth exit)
+        fm.AddPoint(_r_smooth,        -_half)            # step up to smooth OD
+
+        #  SMOOTH zone  (parallel cylinder at user nominal diameter)
+        fm.AddPoint(_r_smooth,        -(length - _half))
+
+        #  BOTTOM inner boundary  (smooth section exits → thread zone)
+        #    mirror of top: step DOWN to relief depth, then expand to thread OD
+        fm.AddPoint(_r_thread - cham, -(length - _half)) # step down to relief depth
+        fm.AddPoint(_r_thread,        -(length - _half + cham))  # expand → thread OD
+
+        fm.AddPoint(_r_thread,        -(length - cham))  # bottom thread zone
     else:
         fm.AddPoint(_r_thread, -length + cham)     # fully threaded straight section
 

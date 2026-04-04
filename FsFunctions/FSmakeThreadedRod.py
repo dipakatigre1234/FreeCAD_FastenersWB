@@ -99,16 +99,34 @@ def makeThreadedRod(self, fa):
 
     # ── 4. Threading ──────────────────────────────────────────────────────────
     #
-    #  Thread runs the full rod length: tl = length, offset_z = 0.
-    #  ASME  : FSThreadingASME.cut_thread()   — UN/UNR helix cutter
-    #  Metric: FSThreadingMetric.cut_thread() — ISO metric helix cutter
+    #  Thread_Length = 0  → fully threaded (one cut, full length)
+    #  Thread_Length = L  → threaded from BOTH ends, each end L/2:
+    #       Top end   : offset_z = 0,            tl = L/2
+    #       Bottom end: offset_z = -(length-L/2), tl = L/2
+    #
+    #  Example: rod = 20mm, Thread_Length = 10mm
+    #       → top 5mm threaded  (z = 0 to -5)
+    #       → bottom 5mm threaded (z = -15 to -20)
+    #       → middle 10mm unthreaded
     #
     if fa.Thread:
-        tl_cut   = length
-        offset_z = 0.0
-        if is_asme:
-            screw = _TA.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
+        raw_tlen  = getattr(fa, "calc_thread_length", 0.0) or 0.0
+        half      = float(raw_tlen) / 2.0
+
+        def _cut(shape, tl, oz):
+            if is_asme:
+                return _TA.cut_thread(shape, fa, d_eff, tl, oz, P)
+            else:
+                return _TM.cut_thread(shape, fa, d_eff, tl, oz, P)
+
+        if raw_tlen <= 0 or raw_tlen >= length:
+            # Thread_Length = 0 or >= total length → fully threaded
+            screw = _cut(screw, length, 0.0)
         else:
-            screw = _TM.cut_thread(screw, fa, d_eff, tl_cut, offset_z, P)
+            # Thread from both ends, half per end
+            # Top end: starts at z = 0, goes down half
+            screw = _cut(screw, half, 0.0)
+            # Bottom end: starts at z = -(length - half), goes down half
+            screw = _cut(screw, half, -(length - half))
 
     return screw

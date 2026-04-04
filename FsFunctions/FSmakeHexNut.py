@@ -50,7 +50,8 @@ def makeHexNut(self, fa):
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
     - ISO 7414 Hexagon heavy nuts — metric
     - ASME B18.2.2 Table 3  — Hex Machine Screw Nuts (ASMEB18.2.2.3)
-    - ASME B18.2.2 Table 5  — Regular Hexagon Nuts (ASMEB18.2.2.5)
+    - ASME B18.2.2 Table 5A — Hex Nuts (ASMEB18.2.2.5A)
+    - ASME B18.2.2 Table 5B — Hex Jam Nuts (ASMEB18.2.2.5B)
     - ASME B18.2.2 Table 11 — Heavy Hex Nuts (11A) and Heavy Hex Jam Nuts (11B)
     - DIN 6334 3xD length hexagon nuts
     - ASME B18.2.2 Table 14 — Hex Coupling Nuts (ASMEB18.2.2.14)
@@ -64,7 +65,8 @@ def makeHexNut(self, fa):
       ISO7414              : P, c, da, dw, e, m, mw, s_nom
       ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = mean(m), s = mean(s)
       ASMEB18.2.2.3        : TPI, F_max, F_min, H_max, H_min (inches) → m = H_max*25.4, s = F_max*25.4
-      ASMEB18.2.2.5        : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
+      ASMEB18.2.2.5A       : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm) → m=mean(m_a)
+      ASMEB18.2.2.5B       : same CSV → m = mean(m_b) (jam nut height)
       ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = mean(m_a)
       ASMEB18.2.2.11B      : same as 11A → m = mean(m_b) (jam nut)
       ASMEB18.2.2.14       : TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) → Coupling Nut
@@ -98,12 +100,13 @@ def makeHexNut(self, fa):
     # ── Unpack dimension table ────────────────────────────────────────────────
     if SType == "ISO7414":
         # CSV columns: P, c, da, dw, e, m, mw, s_nom
-        P, _, da, _, _, m, _, s = fa.dimTable
+        P, _, da, _, e, m, _, s = fa.dimTable
     elif SType[:3] == 'ISO' or SType == "DIN934":
-        P, _, da, _, _, m, _, s = fa.dimTable
+        P, _, da, _, e, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
         # CSV columns: P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm)
         P, da, e_max, e_min, m_max, m_min, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
         m = (m_max + m_min) / 2
         s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.3':
@@ -112,28 +115,43 @@ def makeHexNut(self, fa):
         P = 1.0 / TPI * 25.4
         s = ((F_max + F_min) / 2) * 25.4
         m = ((H_max + H_min) / 2) * 25.4
+        e = s * 2 / sqrt3   # no e column in CSV — derive from s
         da = dia
-    elif SType == 'ASMEB18.2.2.5':
+    elif SType == 'ASMEB18.2.2.5A':
         # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
+        # 5A = Hex Nut  → use m_a (regular nut height)
         P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
         m = (m_a_max + m_a_min) / 2
+        s = (s_max + s_min) / 2
+    elif SType == 'ASMEB18.2.2.5B':
+        # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
+        # 5B = Hex Jam Nut → use m_b (thin/jam nut height)
+        P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
+        m = (m_b_max + m_b_min) / 2
         s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.11A':
         # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
         P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
+        e = (e_max + e_min) / 2
         m = (m_a_max + m_a_min) / 2
         s = (s_max + s_min) / 2
     elif SType == 'ASMEB18.2.2.11B':
         # CSV columns: P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max (mm)
         P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max = fa.dimTable
+        e = (e_max + e_min) / 2
         m = (m_b_max + m_b_min) / 2
         s = (s_max + s_min) / 2
     elif SType == "DIN6334":
         P, da, m, s = fa.dimTable
+        e = s * 2 / sqrt3   # derive e from s for DIN
     elif SType == "ASMEB18.2.2.14":
         # CSV columns: TPI, F_min, F_max, G_min, G_max, H_min, H_max (mm) — Hex Coupling Nut
+        # F = width across flats (s),  G = width across corners (e)
         TPI, F_min, F_max, G_min, G_max, H_min, H_max = fa.dimTable
         P = 1.0 / TPI * 25.4
+        e = (G_max + G_min) / 2
         m = (H_max + H_min) / 2
         s = (F_max + F_min) / 2
         da = dia
@@ -177,8 +195,13 @@ def makeHexNut(self, fa):
 
     # ── Thread geometry constants ─────────────────────────────────────────────
     sqrt2_ = 1.0 / sqrt2
-    # chamfer at nut top
-    cham = s * (sqrt3 / 3 - 1 / 2) * math.tan(math.radians(22.5))
+    # chamfer at hex corners
+    # ASME: use actual e (width across corners) mean from CSV
+    # ISO/DIN: use original formula based on s (no e mean applied)
+    if is_asme:
+        cham = (e - s) * math.sin(math.radians(15))
+    else:
+        cham = s * (sqrt3 / 3 - 1 / 2) * math.tan(math.radians(22.5))
     H = P * cos30
 
     # ── Bore radius from CSV D1max + deviation ───────────────────────────────
@@ -225,15 +248,18 @@ def makeHexNut(self, fa):
     cham_i = cham_i_delta * math.tan(math.radians(15.0))
 
     # ── Nut body profile (revolved solid) ─────────────────────────────────────
+    # e/2 = width-across-corners radius (hex outer corner radius)
+    # For ISO/DIN: e = s*2/sqrt3, so e/2 = s/sqrt3 — identical to previous behaviour
+    # For ASME: e = (e_max+e_min)/2 from CSV — actual standard value used
     fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(_bore_r, m - cham_i)
-    fm.AddPoint(da / 2.0, m)
-    fm.AddPoint(s / 2.0, m)
-    fm.AddPoint(s / sqrt3, m - cham)
-    fm.AddPoint(s / sqrt3, cham)
-    fm.AddPoint(s / 2.0, 0.0)
-    fm.AddPoint(da / 2.0, 0.0)
-    fm.AddPoint(_bore_r, 0.0 + cham_i)
+    fm.AddPoint(_bore_r,   m - cham_i)
+    fm.AddPoint(da / 2.0,  m)
+    fm.AddPoint(s / 2.0,   m)
+    fm.AddPoint(e / 2.0,   m - cham)
+    fm.AddPoint(e / 2.0,   cham)
+    fm.AddPoint(s / 2.0,   0.0)
+    fm.AddPoint(da / 2.0,  0.0)
+    fm.AddPoint(_bore_r,   0.0 + cham_i)
     head = self.RevolveZ(fm.GetFace())
 
     # ── Hexagon prism cut ─────────────────────────────────────────────────────

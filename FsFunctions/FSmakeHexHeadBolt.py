@@ -146,11 +146,12 @@ def makeHexHeadBolt(self, fa):
     #  HEAD  (z = 0 → k):  s, k, e, c, dw, r  ← fa.dimTable  (never deviated)
     #  SHANK (z = 0 → -length):  tr, d_eff     ← threading module
     #
+    # e/2 = width-across-corners radius — use actual CSV e (mean for ASME, direct for ISO/DIN)
     fm = FSFaceMaker()
     fm.AddPoint(0.0,           k)
     fm.AddPoint(s / 2.0,       k)
-    fm.AddPoint(s / sqrt3,     k - cham)
-    fm.AddPoint(s / sqrt3,     c)
+    fm.AddPoint(e / 2.0,       k - cham)
+    fm.AddPoint(e / 2.0,       c)
     if dw is not None:
         fm.AddPoint(dw / 2.0,  c)
         fm.AddPoint(dw / 2.0,  0.0)

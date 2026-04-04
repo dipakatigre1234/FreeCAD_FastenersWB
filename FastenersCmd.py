@@ -273,7 +273,8 @@ FSScrewCommandTable = {
     "ASMEB18.2.2.1B":(translate("FastenerCmd", "UNC Square machine screw nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.2": (translate("FastenerCmd", "UNC Square nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.3": (translate("FastenerCmd", "UNC Hexagon nuts"), NutGroup, NutParameters),
-    "ASMEB18.2.2.5": (translate("FastenerCmd", "UNC Hexagon thin nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.5A":(translate("FastenerCmd", "UNC Hex nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.5B":(translate("FastenerCmd", "UNC Hex jam nuts"), NutGroup, NutParameters),
     # ── ASME B18.2.2 Table 11 — Heavy Hex Nut and Heavy Hex Jam Nut ──────────
     "ASMEB18.2.2.11A":(translate("FastenerCmd", "UNC Heavy hex nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.11B":(translate("FastenerCmd", "UNC Heavy hex jam nuts"), NutGroup, NutParameters),

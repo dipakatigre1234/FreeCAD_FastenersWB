@@ -216,8 +216,11 @@ def valid_tpis_for_dia_type(dia_str, series_str):
 def valid_classes_for_dia_tpi_type(dia_str, tpi, series_str):
     """Return sorted class strings for this dia + TPI + series.
 
+    When tpi is "Custom" returns ["1B","2B","3B"] as safe defaults.
     e.g. → ["1B", "2B", "3B"]
     """
+    if str(tpi).strip() == "Custom":
+        return ["1B", "2B", "3B"]
     dia    = _clean_dia(dia_str)
     series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
     try:
@@ -229,6 +232,30 @@ def valid_classes_for_dia_tpi_type(dia_str, tpi, series_str):
          if k[0] == dia and k[1] == tpi_f and k[2] == series}
     )
     return classes or ["2B"]
+
+
+def nearest_tpi_for_nut(custom_tpi, dia_str, series_str):
+    """Find the nearest standard TPI in the CSV to custom_tpi for this dia+series.
+
+    Used ONLY for CSV bore/class lookup — actual thread geometry uses custom_tpi.
+    Falls back across all series for the dia if none found in requested series.
+    """
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
+    all_tpis = sorted({k[1] for k in _asme_nut_table() if k[0] == dia and k[2] == series})
+    if not all_tpis:
+        all_tpis = sorted({k[1] for k in _asme_nut_table() if k[0] == dia})
+    if not all_tpis:
+        return float(custom_tpi)
+    return min(all_tpis, key=lambda t: abs(t - float(custom_tpi)))
+
+
+def tpi_enum_options_for_nut(dia_str, series_str):
+    """Return TPI dropdown list: standard CSV values first, then 'Custom' last.
+
+    Mirrors FSThreadingASME.tpi_enum_options for bolt/nut consistency.
+    """
+    return valid_tpis_for_dia_type(dia_str, series_str) + ["Custom"]
 
 
 # ── Bore diameter ─────────────────────────────────────────────────────────────
@@ -271,8 +298,24 @@ def bore_dia_from_table(fa, dia_str, tpi, series_str, cls_str):
       bore_eff = Minor_Dia_Max_mm + (Minor_Dia_Max_mm × pct / 100)
 
     Falls back to ASME formula  (nominal_mm − 1.0825 × P_mm)  if CSV miss.
+
+    Custom TPI handling:
+      When tpi == "Custom", reads Thread_TPI_Nut_Custom from fa for the actual
+      thread pitch, and finds the nearest standard TPI for the CSV bore lookup.
     """
-    minor_mm = minor_dia_from_table(dia_str, tpi, series_str, cls_str)
+    tpi_str = str(tpi).strip()
+    if tpi_str == "Custom":
+        custom_val = int(getattr(fa, "Thread_TPI_Nut_Custom", 0) or 0)
+        tpi_actual = float(custom_val) if custom_val > 0 else (resolve_nut_tpi(fa) or 8.0)
+        tpi_for_csv = nearest_tpi_for_nut(tpi_actual, dia_str, series_str)
+    else:
+        try:
+            tpi_actual = float(tpi_str)
+        except (ValueError, TypeError):
+            tpi_actual = 8.0
+        tpi_for_csv = tpi_actual
+
+    minor_mm = minor_dia_from_table(dia_str, tpi_for_csv, series_str, cls_str)
 
     try:
         dia_mm = _inch_str_to_mm(_clean_dia(dia_str))
@@ -280,12 +323,8 @@ def bore_dia_from_table(fa, dia_str, tpi, series_str, cls_str):
         dia_mm = 25.4  # 1 inch fallback
 
     if minor_mm is None:
-        # Fallback: ASME formula for minor diameter
-        try:
-            tpi_f = float(tpi)
-            P_mm  = 25.4 / tpi_f if tpi_f > 0 else 1.0
-        except (ValueError, TypeError):
-            P_mm = 1.0
+        # Fallback: ASME formula for minor diameter using actual (custom) TPI
+        P_mm     = 25.4 / tpi_actual if tpi_actual > 0 else 1.0
         minor_mm = dia_mm - 1.0825 * P_mm
 
     pct       = _interpolated_deviation_pct(dia_mm)
@@ -314,12 +353,18 @@ def resolve_nut_tpi(fa):
     """Resolve TPI for ASME nut from fa attributes.
 
     Priority:
-      1. Thread_TPI_Nut  (dashboard dropdown — set by FastenersCmd execute)
-      2. fa.calc_tpi     (custom TPI override)
-      3. Coarsest TPI from CSV for this dia + type
+      1. Thread_TPI_Nut == "Custom"  → use Thread_TPI_Nut_Custom integer value
+      2. Thread_TPI_Nut  (standard dropdown selection)
+      3. fa.calc_tpi     (custom TPI override)
+      4. Coarsest TPI from CSV for this dia + type
     """
     tpi_prop = str(getattr(fa, "Thread_TPI_Nut", "") or "")
-    if tpi_prop and tpi_prop not in ("", "Custom"):
+    if tpi_prop == "Custom":
+        cust = int(getattr(fa, "Thread_TPI_Nut_Custom", 0) or 0)
+        if cust > 0:
+            return float(cust)
+        # Custom selected but no value yet — fall through
+    elif tpi_prop:
         try:
             return float(tpi_prop)
         except Exception:
@@ -366,13 +411,18 @@ def set_asme_nut_visibility(fp, thread_on):
     if hasattr(fp, "Thread_TPI_Nut"):
         fp.setEditorMode("Thread_TPI_Nut", 0 if thread_on else 2)
 
-    # Thread_Class_Nut_ASME: visible only when thread_on AND a TPI is selected
+    # Thread_TPI_Nut_Custom: visible only when thread_on AND "Custom" is selected
     _tpi = ""
     if hasattr(fp, "Thread_TPI_Nut"):
         try:
             _tpi = str(fp.Thread_TPI_Nut)
         except Exception:
             pass
+    _is_custom = thread_on and (_tpi == "Custom")
+    if hasattr(fp, "Thread_TPI_Nut_Custom"):
+        fp.setEditorMode("Thread_TPI_Nut_Custom", 0 if _is_custom else 2)
+
+    # Thread_Class_Nut_ASME: visible only when thread_on AND a TPI is selected
     _cls_ready = thread_on and bool(_tpi)
     if hasattr(fp, "Thread_Class_Nut_ASME"):
         fp.setEditorMode("Thread_Class_Nut_ASME", 0 if _cls_ready else 2)

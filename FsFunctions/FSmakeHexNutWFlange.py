@@ -33,12 +33,13 @@ def makeHexNutWFlange(self, fa):
     """Creates a hexagon nut with a flanged base.
     Supported types:
     - EN1661 nuts with flange
-    - ASME B18.2.2 UNC flanged nuts
+    - ASME B18.2.2 Table 13A — Hex Flange Nuts (ASMEB18.2.2.13A)
+    - ASME B18.2.2 Table 13B — Large Hex Flange Nuts (ASMEB18.2.2.13B)
     - DIN6331 Hexagon nuts with collar height 1,5 d
     """
 
     match fa.baseType:
-        case "EN1661" | "ASMEB18.2.2.12" | "ISO4161" | "ISO10663":
+        case "EN1661" | "ASMEB18.2.2.13A" | "ASMEB18.2.2.13B" | "ISO4161" | "ISO10663":
             return _makeHexNutWithTaperedFlange(self, fa)
         case "DIN6331":
             return _makeHexNutWithSquareFlange(self, fa)
@@ -51,14 +52,15 @@ def _makeHexNutWithTaperedFlange(self, fa):
     if fa.baseType == "EN1661":
         P, da, c, dc, _, _, m, _, _, s = fa.dimTable
         flange_edge_rounded = True
-    elif fa.baseType == "ASMEB18.2.2.12":
-        TPI, F, B, H, J, K = fa.dimTable
+    elif fa.baseType in ("ASMEB18.2.2.13A", "ASMEB18.2.2.13B"):
+        # CSV columns: TPI, F_min, F_max, G_min, G_max, B_min, B_max, H_min, H_max, J, K (mm)
+        TPI, F_min, F_max, G_min, G_max, B_min, B_max, H_min, H_max, J, K = fa.dimTable
         P = 1 / TPI * 25.4
-        s = F * 25.4
-        dc = B * 25.4
+        s = (F_max + F_min) / 2
+        dc = (B_max + B_min) / 2
         da = 1.05 * dia
-        m = H * 25.4
-        c = K * 25.4
+        m = (H_max + H_min) / 2
+        c = K
         flange_edge_rounded = False
     elif fa.baseType in ["ISO4161", "ISO10663"]:
         (

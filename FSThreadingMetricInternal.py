@@ -1,145 +1,222 @@
 # -*- coding: utf-8 -*-
 """
-FSThreadingMetricInternal.py — ISO metric INTERNAL thread module (nuts)
-========================================================================
+FSThreadingASMEInternal.py — ASME UN/UNR INTERNAL thread module (nuts)
+=======================================================================
 Responsibilities:
-  1. Load metric_internal_thread_dia.csv (ISO 965-6-2025  D1max values)
+  1. Load un_unr_internal_thread_minor_dia.csv (ASME B1.1 Table 3)
   2. Table query helpers for FastenersCmd dashboard dropdowns
-  3. Bore diameter with deviation (D1max + deviation)
-  4. Cut ISO metric internal threads into a FreeCAD nut shape
+  3. Bore diameter with deviation (Minor_Dia_Max + deviation)
+  4. Used by FSmakeHexNut for ASME nut bore geometry
 
-NOT responsible for: hex geometry, nut height (m), chamfer, s, da.
-Those stay in FSmakeHexNut.py.
+CSV structure:
+  Row 0 : table name   "UN_UNR_Internal_Thread_Minor_Dia_Table3_ASME_B1.1"  ← skip
+  Row 1 : headers      Dia, TPI, Series, Class, Minor_Dia_Mean, Minor_Dia_Max, Minor_Dia_Min
+  Row 2+: data         all values in INCHES — converted to mm on return
+
+Key:  (dia_str, tpi_float, series_str, class_str) → Minor_Dia_Max (inches)
 
 Public API
 ----------
-  valid_pitches_for_dia(dia_str)                -> list[str]
-  valid_classes_for_dia_pitch(dia_str, p_str)   -> list[str]
-  bore_dia_from_table(fa, dia_str, p_str, cls)  -> float mm  (D1max + deviation)
-  set_nut_thread_visibility(fp, thread_on)      -> None
-  cut_internal_thread(shape, fa, dia, depth, P) -> shape
+  valid_types_for_dia(dia_str)                           -> list[str]   e.g. ["UNC","UNF","UN"]
+  valid_tpis_for_dia_type(dia_str, series_str)           -> list[str]   e.g. ["8","12","Custom"]
+  valid_classes_for_dia_tpi_type(dia, tpi, series)       -> list[str]   e.g. ["1B","2B","3B"]
+  custom_tpi_range_for_dia(dia_str)                      -> (min_tpi, max_tpi)
+  bore_dia_from_table(fa, dia_str, tpi, series, cls)     -> float mm    bore_eff with deviation
+  resolve_nut_tpi(fa)                                    -> float
+  set_asme_nut_visibility(fp, thread_on)                 -> None
 
-Deviation system (bore — D1max PLUS deviation)
-----------------------------------------------
-Internal thread bore = D1max from CSV  +  small positive deviation.
+FreeCAD property names used (ASME nut, distinct from metric nut and ASME bolt props)
+-----------------------------------------------------------------------
+  Thread_Type_Nut        — series dropdown  (UNC / UNF / UN / UNEF / UNS / UNR)
+  Thread_TPI_Nut         — TPI dropdown     (e.g. "8", "20", "Custom")
+  Thread_TPI_Nut_Custom  — integer field    shown only when Thread_TPI_Nut == "Custom"
+  Thread_Class_Nut_ASME  — class dropdown   (1B / 2B / 3B)
 
-Unlike the bolt (which SUBTRACTS from d_raw to make the shank thinner),
-the nut bore ADDS a small amount to D1max so the bore is slightly wider
-than the ISO minimum — this gives easier assembly and accounts for
-real-world tap geometry while staying within the tolerance class limits.
+Custom TPI behaviour
+--------------------
+When the user selects "Custom" in Thread_TPI_Nut:
+  • Thread_TPI_Nut_Custom is shown (integer spinner).
+  • The class dropdown is populated from the nearest standard TPI for that diameter.
+  • bore_dia_from_table / resolve_nut_tpi fall back to the nearest standard TPI
+    from the CSV to pick Minor_Dia_Max; the custom TPI is used for pitch / cutter.
+  • custom_tpi_range_for_dia() returns (min_tpi, max_tpi) from the CSV for the
+    selected diameter so callers can clamp the spinner.
 
-  bore_eff  =  D1max  +  (D1max × pct / 100)
+Deviation system
+----------------
+Minor_Dia_Max from CSV is the ASME maximum minor diameter for the chosen class.
+A small positive deviation is ADDED to give real-world bore clearance.
 
-Deviation scales with diameter:
-  Small nuts  (M1   ≈  1 mm)  →  DEVIATION_PCT_SMALL  (larger addition)
-  Large nuts  (M300 ≈ 300 mm) →  DEVIATION_PCT_LARGE  (smaller addition)
-  In between  →  linearly interpolated
+  bore_eff = Minor_Dia_Max_mm + (Minor_Dia_Max_mm × pct / 100)
 
-Typical values per ISO 965 tolerance band analysis:
-  M1    →  +1.00 % of D1max  (very small, tap wander matters)
-  M6    →  +0.80 %
-  M16   →  +0.60 %
-  M48   →  +0.45 %
-  M100+ →  +0.30 %
+Deviation scales with diameter (same pattern as FSThreadingMetricInternal):
+  Small (#0 ≈ 1.5 mm)  → BORE_DEVIATION_PCT_SMALL (larger addition)
+  Large (6 in ≈ 152 mm) → BORE_DEVIATION_PCT_LARGE (smaller addition)
+  In between            → linearly interpolated
 
-↓↓ Change only these two values — dia bounds read from CSV ↓↓
-BORE_DEVIATION_PCT_SMALL = 1.0   # % ADDED at smallest dia in CSV
-BORE_DEVIATION_PCT_LARGE = 0.3   # % ADDED at largest  dia in CSV
+↓↓ Change only these two values ↓↓
+BORE_DEVIATION_PCT_SMALL = 0.0   # % ADDED at smallest dia in CSV
+BORE_DEVIATION_PCT_LARGE = 0.0   # % ADDED at largest  dia in CSV
 """
 
 import os as _os, math as _math, functools as _functools
-_sqrt3 = _math.sqrt(3.0)
 
-_CSV_DIR      = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "FsData")
-_CSV_INTERNAL = _os.path.join(_CSV_DIR, "metric_internal_thread_dia.csv")
+_CSV_DIR       = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "FsData")
+_CSV_ASME_NUT  = _os.path.join(_CSV_DIR, "un_unr_internal_thread_minor_dia.csv")
 
-# ── Bore deviation (percentage, diameter-dependent) ───────────────────────────
-#
-# D1max from CSV is the ISO maximum minor diameter for the chosen class.
-# A small positive deviation is ADDED to give real-world bore clearance.
-#
-# bore_eff = D1max + (D1max × pct / 100)
-#
-# BORE_DEVIATION_PCT_SMALL  →  applied at the smallest diameter in the CSV
-# BORE_DEVIATION_PCT_LARGE  →  applied at the largest  diameter in the CSV
-# In between                →  linearly interpolated by _interpolated_deviation_pct()
-#
-# Typical bore deviation guidance (ISO 965 / manufacturing practice):
-#   M1   :  +1.00 %  — very small taps flex; extra clearance critical
-#   M3   :  +0.90 %
-#   M6   :  +0.80 %
-#   M12  :  +0.65 %
-#   M24  :  +0.50 %
-#   M48  :  +0.40 %
-#   M100 :  +0.33 %
-#   M300 :  +0.30 %  — large nuts use precision boring, less scatter
-#
-BORE_DEVIATION_PCT_SMALL = 1.0    # % ADDED at smallest dia in metric_internal_thread_dia.csv
-BORE_DEVIATION_PCT_LARGE = 0.3    # % ADDED at largest  dia in metric_internal_thread_dia.csv
+# ── Bore deviation constants ──────────────────────────────────────────────────
+BORE_DEVIATION_PCT_SMALL = 0.0
+BORE_DEVIATION_PCT_LARGE = 0.0
+
+
+# ── Diameter string normalisation ─────────────────────────────────────────────
+
+def _clean_dia(dia_str):
+    """Normalise ASME diameter string to match the CSV key format.
+
+    The CSV uses hyphen-separated mixed fractions: "1-3/4", "2-1/4", etc.
+    FreeCAD passes diameters with an 'in' suffix and space-separated fractions:
+    "1 3/4in", "2 1/4in".
+
+    Conversion steps:
+      1. Strip surrounding whitespace.
+      2. Remove 'in' suffix (and any stray '"' inch character).
+      3. If a space AND a slash are both present → space-separated mixed
+         fraction → replace the space with '-' to get "1-3/4".
+      4. Strip again.
+
+    Examples
+    --------
+    "1 3/4in"  → "1-3/4"    ← was broken before (returned "1 3/4")
+    "1/4in"    → "1/4"
+    "1in"      → "1"
+    "2 1/4in"  → "2-1/4"
+    "#10"      → "#10"
+    "1-3/4"    → "1-3/4"    (CSV keys passed directly — idempotent)
+    """
+    s = str(dia_str).strip()
+    # Remove inch markers
+    s = s.replace("in", "").replace('"', "").strip()
+    # "1 3/4" (space + fraction) → "1-3/4"
+    if " " in s and "/" in s:
+        parts = s.split(" ", 1)
+        if "/" in parts[1]:
+            s = parts[0].strip() + "-" + parts[1].strip()
+    return s.strip()
+
+
+# ── Inch string → mm conversion ───────────────────────────────────────────────
+
+def _inch_str_to_mm(dia_str):
+    """Convert ASME diameter string to mm for deviation interpolation.
+
+    Accepts both CSV-key format ("1-3/4") and FreeCAD format ("1 3/4in").
+    Always normalises through _clean_dia first.
+
+    Examples:
+      '#0'    → 1.524       (0.060 in)
+      '1/4'   → 6.35
+      '1-1/2' → 38.1
+      '1 1/2' → 38.1
+      '1'     → 25.4
+      '6'     → 152.4
+    """
+    # Normalise to CSV key format first
+    s = _clean_dia(dia_str)
+
+    # Numbered sizes (#0 – #12)
+    _num_map = {
+        "#0": 0.060, "#1": 0.073, "#2": 0.086, "#3": 0.099,
+        "#4": 0.112, "#5": 0.125, "#6": 0.138, "#8": 0.164,
+        "#10": 0.190, "#12": 0.216,
+    }
+    if s in _num_map:
+        return _num_map[s] * 25.4
+
+    # Hyphen-separated mixed fractions: "1-3/4", "2-1/4", etc.
+    if "-" in s and "/" in s:
+        parts = s.split("-", 1)
+        whole = float(parts[0])
+        n, d  = parts[1].split("/")
+        return (whole + float(n) / float(d)) * 25.4
+
+    # Simple fractions: "1/4", "3/8"
+    if "/" in s:
+        n, d = s.split("/")
+        return float(n) / float(d) * 25.4
+
+    # Integer or decimal inch: "1", "2", "6"
+    return float(s) * 25.4
 
 
 # ── Dia bounds (read once from CSV) ──────────────────────────────────────────
 
-def _internal_dia_bounds_mm():
-    """Return (min_mm, max_mm) from CSV Dia_mm column. Falls back to (1.0, 300.0)."""
+def _asme_dia_bounds_mm():
+    """Return (min_mm, max_mm) from CSV Dia column. Falls back to (1.5, 152.4)."""
     import csv
     mm_vals = []
     try:
-        with open(_CSV_INTERNAL, newline="", encoding="utf-8") as f:
+        with open(_CSV_ASME_NUT, newline="", encoding="utf-8") as f:
             lines = f.readlines()
-        for row in csv.DictReader(lines[1:]):
+        for row in csv.DictReader(lines[1:]):   # skip row 0 (table name)
             try:
-                mm_vals.append(float(str(row["Dia_mm"]).strip()))
+                mm_vals.append(_inch_str_to_mm(row["Dia"].strip()))
             except Exception:
                 pass
     except Exception:
         pass
-    if len(mm_vals) >= 2:
-        return (min(mm_vals), max(mm_vals))
-    return (1.0, 300.0)
+    valid = [v for v in mm_vals if v and v > 0]
+    if len(valid) >= 2:
+        return (min(valid), max(valid))
+    return (1.5, 152.4)
 
 
-_BORE_DIA_MIN_MM, _BORE_DIA_MAX_MM = _internal_dia_bounds_mm()
+_BORE_DIA_MIN_MM, _BORE_DIA_MAX_MM = _asme_dia_bounds_mm()
 
 
 def _interpolated_deviation_pct(dia_mm):
-    """Linearly interpolate BORE_DEVIATION_PCT between SMALL (min dia) and LARGE (max dia)."""
+    """Linearly interpolate BORE_DEVIATION_PCT between SMALL and LARGE."""
     lo, hi = _BORE_DIA_MIN_MM, _BORE_DIA_MAX_MM
     if hi <= lo:
         return BORE_DEVIATION_PCT_SMALL
-    t   = max(0.0, min(1.0, (float(dia_mm) - lo) / (hi - lo)))
+    t = max(0.0, min(1.0, (float(dia_mm) - lo) / (hi - lo)))
     return BORE_DEVIATION_PCT_SMALL + t * (BORE_DEVIATION_PCT_LARGE - BORE_DEVIATION_PCT_SMALL)
 
 
 # ── CSV loader (cached) ───────────────────────────────────────────────────────
 
 @_functools.lru_cache(maxsize=1)
-def _internal_table():
-    """Return dict keyed (dia_str, pitch_str, class_str) → D1max_mm float.
+def _asme_nut_table():
+    """Return dict keyed (dia_str, tpi_float, series_str, class_str) → Minor_Dia_Max_inches.
 
-    CSV structure:
-      Row 0 : table name  "Metric_Internal_Thread_D1max_ISO965-6-2025"  ← skip
-      Row 1 : headers     Dia_mm, Pitch_mm, Class, D1max_mm
-      Row 2+: data
+    CSV layout:
+      Row 0 : table name  ← skip
+      Row 1 : headers  Dia, TPI, Series, Class, Minor_Dia_Mean, Minor_Dia_Max, Minor_Dia_Min
+      Row 2+: data — all dimension values in INCHES
 
-    dia_str and pitch_str are normalised to strip trailing zeros so that
-    "6.0" and "6" both hit the same key.
+    Minor_Dia_Max is used (largest acceptable bore ensuring bolt fits freely).
+    Conversion to mm is done at lookup time.
+
+    NOTE: CSV Dia column uses hyphen-separated mixed fractions ("1-3/4").
+    All keys are stored in that canonical form. _clean_dia() normalises
+    FreeCAD diameter strings to this form before any lookup.
     """
     import csv
     table = {}
     try:
-        with open(_CSV_INTERNAL, newline="", encoding="utf-8") as f:
+        with open(_CSV_ASME_NUT, newline="", encoding="utf-8") as f:
             lines = f.readlines()
         reader = csv.DictReader(lines[1:])   # skip row 0 (table name)
         for row in reader:
             try:
-                dia_raw   = str(row["Dia_mm"]).strip()
-                pitch_raw = str(row["Pitch_mm"]).strip()
-                cls_raw   = str(row["Class"]).strip()
-                d1max     = float(row["D1max_mm"])
-                dia_key   = _norm(dia_raw)
-                p_key     = _norm(pitch_raw)
-                table[(dia_key, p_key, cls_raw)] = d1max
+                # Store CSV Dia as-is (already in "1-3/4" form) — normalise
+                # for safety in case the CSV format ever changes.
+                dia    = _clean_dia(row["Dia"].strip())
+                tpi    = float(row["TPI"].strip())
+                series = row["Series"].strip()
+                cls    = row["Class"].strip()
+                d_max  = float(row["Minor_Dia_Max"].strip())
+                table[(dia, tpi, series, cls)] = d_max
             except Exception:
                 pass
     except Exception:
@@ -147,104 +224,240 @@ def _internal_table():
     return table
 
 
-def _norm(val_str):
-    """Normalise a numeric string: strip whitespace, remove trailing zeros.
-    "6.0" → "6", "1.00" → "1", "0.75" → "0.75", "1.5" → "1.5"
+# ── Nearest standard TPI helper ───────────────────────────────────────────────
+
+def nearest_standard_tpi(dia_str, series_str, custom_tpi):
+    """Return the TPI from the CSV table nearest to custom_tpi.
+
+    Used when the user picks "Custom" TPI so that the class dropdown and
+    bore lookup can still use a valid standard value.
+
+    Parameters
+    ----------
+    dia_str    : normalised diameter string (passed through _clean_dia internally)
+    series_str : series string e.g. "UNC", "UN"
+    custom_tpi : float  — user-entered custom TPI value
     """
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
+    tpis   = sorted({k[1] for k in _asme_nut_table() if k[0] == dia and k[2] == series})
+    if not tpis:
+        # Try all series at this diameter
+        tpis = sorted({k[1] for k in _asme_nut_table() if k[0] == dia})
+    if not tpis:
+        return float(custom_tpi)
     try:
-        f = float(str(val_str).strip())
-        return str(f).rstrip("0").rstrip(".")
-    except Exception:
-        return str(val_str).strip()
+        ctpi = float(custom_tpi)
+    except (ValueError, TypeError):
+        return tpis[0]
+    return min(tpis, key=lambda t: abs(t - ctpi))
 
 
-def _dia_key_from_mm(dia_mm):
-    """Convert a float mm dia to the normalised CSV key string."""
-    return _norm(str(dia_mm))
+# ── Custom TPI range helper ───────────────────────────────────────────────────
+
+def custom_tpi_range_for_dia(dia_str, series_str=""):
+    """Return (min_tpi, max_tpi) integer tuple for the given diameter.
+
+    Used to set sensible bounds on the Thread_TPI_Nut_Custom spinner.
+    Returns (1, 80) as a safe fallback if no rows are found.
+
+    Parameters
+    ----------
+    dia_str    : any ASME diameter string (normalised internally)
+    series_str : optional series filter; if blank, uses all series for that dia
+    """
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
+    if series:
+        tpis = sorted({k[1] for k in _asme_nut_table()
+                       if k[0] == dia and k[2] == series})
+    else:
+        tpis = sorted({k[1] for k in _asme_nut_table() if k[0] == dia})
+
+    if len(tpis) >= 2:
+        return (int(min(tpis)), int(max(tpis)))
+    if len(tpis) == 1:
+        t = int(tpis[0])
+        return (max(1, t - 4), t + 4)
+    return (1, 80)
 
 
 # ── Dropdown helpers ──────────────────────────────────────────────────────────
 
-def valid_pitches_for_dia(dia_str):
-    """Return sorted list of pitch strings (ascending) available for this dia.
+def valid_types_for_dia(dia_str):
+    """Return ordered list of series (thread types) available for this diameter.
 
-    dia_str may be "M6", "6.0", "6" — all normalised to float key.
+    e.g. valid_types_for_dia("1in") → ["UNC", "UNF", "UNEF", "UN", "UNS", "UNR"]
+
+    UNR is appended when UN is present — UNR is an external-only form; the nut
+    internal thread is the same UN table.
+
+    FreeCAD passes diameters like "1 3/4in"; _clean_dia normalises to "1-3/4"
+    so the CSV lookup succeeds.
     """
-    dia_clean = dia_str.strip().lstrip("Mm")
-    dia_key   = _norm(dia_clean)
-    pitches   = sorted(
-        {k[1] for k in _internal_table() if k[0] == dia_key},
-        key=lambda x: float(x)
+    dia = _clean_dia(dia_str)
+    series_set = {k[2] for k in _asme_nut_table() if k[0] == dia}
+    order  = ["UNC", "UNF", "UNEF", "UN", "UNS"]
+    result = [s for s in order if s in series_set]
+    if "UN" in result:
+        result.append("UNR")   # UNR shares UN rows
+    return result or ["UNC"]
+
+
+def valid_tpis_for_dia_type(dia_str, series_str):
+    """Return sorted TPI strings (descending = coarse first) plus "Custom".
+
+    Always appends "Custom" as the last option so users can type any TPI.
+    UNR maps to UN rows.
+    """
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
+    tpis   = sorted(
+        {k[1] for k in _asme_nut_table() if k[0] == dia and k[2] == series},
+        reverse=True,
     )
-    return pitches
+    std = [str(int(t)) if t == int(t) else str(t) for t in tpis]
+    return std + ["Custom"]
 
 
-def valid_classes_for_dia_pitch(dia_str, pitch_str):
-    """Return sorted list of class strings for this dia+pitch.
-    Returns e.g. ['4H', '5H', '6G', '6H', '7H'].
+def valid_classes_for_dia_tpi_type(dia_str, tpi, series_str):
+    """Return sorted class strings for this dia + TPI + series.
+
+    When tpi is "Custom", uses the nearest standard TPI to determine classes.
+    e.g. → ["1B", "2B", "3B"]
     """
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
-    p_key   = _norm(str(pitch_str).strip())
-    classes = sorted({k[2] for k in _internal_table()
-                      if k[0] == dia_key and k[1] == p_key})
-    return classes
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
+
+    tpi_str = str(tpi).strip()
+    if tpi_str == "Custom":
+        # Use all classes available for this dia+series across any TPI
+        classes = sorted(
+            {k[3] for k in _asme_nut_table()
+             if k[0] == dia and k[2] == series}
+        )
+        return classes or ["2B"]
+
+    try:
+        tpi_f = float(tpi_str)
+    except (ValueError, TypeError):
+        return ["2B"]
+    classes = sorted(
+        {k[3] for k in _asme_nut_table()
+         if k[0] == dia and k[1] == tpi_f and k[2] == series}
+    )
+    return classes or ["2B"]
 
 
 # ── Bore diameter ─────────────────────────────────────────────────────────────
 
-def d1max_from_table(dia_str, pitch_str, cls_str):
-    """Return raw D1max_mm from CSV (NO deviation). Returns None if not found.
+def minor_dia_from_table(dia_str, tpi, series_str, cls_str):
+    """Return raw Minor_Dia_Max in mm (NO deviation). Returns None if not found.
+
+    When tpi is "Custom" or a non-standard value, the nearest standard TPI is
+    used for the CSV lookup so a meaningful bore size is always returned.
 
     Parameters
     ----------
-    dia_str   : nominal diameter string, e.g. "6.0", "M6", "6"
-    pitch_str : pitch string mm, e.g. "1.0", "1"
-    cls_str   : class string, e.g. "6H", "4H"
+    dia_str    : ASME diameter string e.g. "1 3/4in", "1/2in", "#10"
+    tpi        : TPI float/string or "Custom"
+    series_str : series string e.g. "UNC", "UN", "UNR"
+    cls_str    : class string e.g. "2B"
     """
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
-    p_key   = _norm(str(pitch_str).strip())
-    return _internal_table().get((dia_key, p_key, str(cls_str).strip()))
+    dia    = _clean_dia(dia_str)
+    series = "UN" if str(series_str).strip() == "UNR" else str(series_str).strip()
 
+    tpi_str = str(tpi).strip()
+    if tpi_str == "Custom":
+        # No custom value to resolve here — return None; caller uses fallback formula
+        return None
 
-def bore_dia_from_table(fa, dia_str, pitch_str, cls_str):
-    """Return bore effective diameter mm = D1max + positive deviation.
-
-    D1max (CSV) → bore_eff = D1max + (D1max × pct/100)
-
-    The deviation makes the bore slightly wider than the ISO D1max value,
-    accounting for tap geometry scatter and ensuring the bolt can always
-    thread in without binding. Deviation scales with size:
-      small nut → BORE_DEVIATION_PCT_SMALL (larger addition)
-      large nut → BORE_DEVIATION_PCT_LARGE (smaller addition)
-
-    Falls back to (nominal_mm - 1.0825×P) if not found in CSV.
-    """
-    d1max = d1max_from_table(dia_str, pitch_str, cls_str)
     try:
-        dia_mm = float(str(dia_str).strip().lstrip("Mm"))
-    except Exception:
-        dia_mm = 6.0
+        tpi_f = float(tpi_str)
+    except (ValueError, TypeError):
+        return None
 
-    if d1max is None:
-        # Fallback: ISO formula for D1 = nominal - 1.0825 × P
+    val_in = _asme_nut_table().get((dia, tpi_f, series, str(cls_str).strip()))
+    if val_in is not None:
+        return val_in * 25.4   # inches → mm
+
+    # Series fallback: try common series at same TPI
+    for fb in ("UNC", "UNF", "UNEF", "UN"):
+        if fb == series:
+            continue
+        val_in = _asme_nut_table().get((dia, tpi_f, fb, str(cls_str).strip()))
+        if val_in is not None:
+            return val_in * 25.4
+    return None
+
+
+def bore_dia_from_table(fa, dia_str, tpi, series_str, cls_str):
+    """Return bore effective diameter mm = Minor_Dia_Max_mm + positive deviation.
+
+    Mirrors FSThreadingMetricInternal.bore_dia_from_table:
+      bore_eff = Minor_Dia_Max_mm + (Minor_Dia_Max_mm × pct / 100)
+
+    For Custom TPI: uses nearest standard TPI from CSV for the bore lookup so
+    the bore wall is correctly sized, while the helix pitch uses the custom value.
+
+    Falls back to ASME formula  (nominal_mm − 1.0825 × P_mm)  if CSV miss.
+    """
+    tpi_str = str(tpi).strip()
+    is_custom = (tpi_str == "Custom")
+
+    # Resolve effective TPI for bore lookup
+    if is_custom:
+        # Read the custom integer value from fa
+        custom_val = int(getattr(fa, "Thread_TPI_Nut_Custom", 0) or 0)
+        if custom_val > 0:
+            effective_tpi_for_lookup = nearest_standard_tpi(dia_str, series_str, custom_val)
+        else:
+            effective_tpi_for_lookup = None
+    else:
         try:
-            p_mm = float(str(pitch_str).strip())
-        except Exception:
-            p_mm = 1.0
-        d1max = dia_mm - 1.0825 * p_mm
+            effective_tpi_for_lookup = float(tpi_str)
+        except (ValueError, TypeError):
+            effective_tpi_for_lookup = None
 
-    pct         = _interpolated_deviation_pct(dia_mm)
-    deviation   = d1max * pct / 100.0
-    bore_eff    = d1max + deviation
+    minor_mm = None
+    if effective_tpi_for_lookup is not None:
+        minor_mm = minor_dia_from_table(dia_str, effective_tpi_for_lookup, series_str, cls_str)
+
+    try:
+        dia_mm = _inch_str_to_mm(_clean_dia(dia_str))
+    except Exception:
+        dia_mm = 25.4  # 1 inch fallback
+
+    if minor_mm is None:
+        # Fallback: ASME formula for minor diameter
+        try:
+            if is_custom:
+                tpi_for_formula = float(getattr(fa, "Thread_TPI_Nut_Custom", 8) or 8)
+            else:
+                tpi_for_formula = float(tpi_str) if tpi_str else 8.0
+            P_mm  = 25.4 / tpi_for_formula if tpi_for_formula > 0 else 1.0
+        except (ValueError, TypeError):
+            P_mm = 1.0
+        minor_mm = dia_mm - 1.0825 * P_mm
+
+    pct       = _interpolated_deviation_pct(dia_mm)
+    deviation = minor_mm * pct / 100.0
+    bore_eff  = minor_mm + deviation
 
     try:
         import FreeCAD as _FC
+        _lookup_tpi_label = (
+            f"Custom → nearest={effective_tpi_for_lookup}"
+            if is_custom else tpi_str
+        )
         _FC.Console.PrintMessage(
-            f"[NutBore] dia={dia_str} P={pitch_str} cls={cls_str}\n"
-            f"  D1max (CSV)    = {d1max:.5f} mm\n"
-            f"  deviation pct  = {pct:.4f} %\n"
-            f"  deviation_mm   = {deviation:.5f} mm\n"
-            f"  bore_eff       = {bore_eff:.5f} mm  (body bore radius = {bore_eff/2:.5f} mm)\n"
+            f"[ASMENutBore] dia={dia_str} TPI={_lookup_tpi_label} "
+            f"series={series_str} cls={cls_str}\n"
+            f"  Minor_Dia_Max  (CSV) = {minor_mm:.5f} mm\n"
+            f"  deviation pct        = {pct:.4f} %\n"
+            f"  deviation_mm         = {deviation:.5f} mm\n"
+            f"  bore_eff             = {bore_eff:.5f} mm"
+            f"  (bore radius = {bore_eff / 2:.5f} mm)\n"
         )
     except Exception:
         pass
@@ -252,181 +465,90 @@ def bore_dia_from_table(fa, dia_str, pitch_str, cls_str):
     return bore_eff
 
 
-# ── Resolve pitch from fa ─────────────────────────────────────────────────────
+# ── Resolve TPI from fa ───────────────────────────────────────────────────────
 
-def resolve_nut_pitch(fa):
-    """Resolve metric pitch mm for a nut from fa attributes.
+def resolve_nut_tpi(fa):
+    """Resolve effective TPI (float) for ASME nut from fa attributes.
 
     Priority:
-      1. fa.calc_pitch (user-set custom pitch or ThreadPitch override)
-      2. fa.Thread_Pitch_Nut (dashboard dropdown selection)
-      3. Coarsest pitch from CSV for this dia
+      1. Thread_TPI_Nut == "Custom"  → use Thread_TPI_Nut_Custom integer
+      2. Thread_TPI_Nut  (standard dropdown value)
+      3. fa.calc_tpi     (custom TPI override from elsewhere)
+      4. Coarsest standard TPI from CSV for this dia + type
+
+    Always returns a positive float or None.
     """
-    cp = getattr(fa, "calc_pitch", None)
-    if cp and float(cp) > 0:
-        return float(cp)
+    tpi_prop = str(getattr(fa, "Thread_TPI_Nut", "") or "")
 
-    dia_str = str(getattr(fa, "calc_diam", "") or "")
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
+    if tpi_prop == "Custom":
+        custom_val = int(getattr(fa, "Thread_TPI_Nut_Custom", 0) or 0)
+        if custom_val > 0:
+            return float(custom_val)
+        # Custom selected but no value yet — fall through to coarsest
 
-    p_prop = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
-    if p_prop:
+    elif tpi_prop and tpi_prop not in ("", "Custom"):
         try:
-            return float(p_prop)
+            return float(tpi_prop)
         except Exception:
             pass
 
-    pitches = valid_pitches_for_dia(dia_str)
-    if pitches:
-        return float(pitches[-1])   # coarsest = largest pitch number
+    ct = getattr(fa, "calc_tpi", None)
+    if ct is not None:
+        try:
+            ct_f = float(ct)
+            if ct_f > 0:
+                return ct_f
+        except Exception:
+            pass
+
+    dia_str    = str(getattr(fa, "calc_diam", "") or "")
+    series_str = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+    tpis = valid_tpis_for_dia_type(dia_str, series_str)
+    # valid_tpis_for_dia_type always ends with "Custom" — skip it
+    std_tpis = [t for t in tpis if t != "Custom"]
+    if std_tpis:
+        return float(std_tpis[-1])   # coarsest = last in descending list
 
     return None
 
 
-# ── Internal thread cutter ────────────────────────────────────────────────────
-
-def make_internal_thread_cutter(bore_dia, P, depth, root_round=False):
-    """Return ISO metric internal thread cutter solid.
-
-    Exact mirror of make_metric_thread_cutter (external).
-
-    External: crest at d2 (outer),  root inward  at d2 - 0.625H
-    Internal: crest at d2 (inner),  root outward at d2 + 0.625H
-
-    root_round=False → flat root (into nut material)   standard
-    root_round=True  → rounded root (ISO 68-1)         standard for nuts
-
-    Parameters
-    ----------
-    bore_dia  : float  effective bore dia mm (D1max + deviation)
-    P         : float  pitch mm
-    depth     : float  thread depth mm (nut height m)
-    root_round: bool   True → arc at root (outward), False → flat
-    """
-    import Part, FastenerBase
-    import FreeCAD as _FC
-    Base = _FC.Base
-
-    H      = _sqrt3 / 2.0 * P
-    d2     = bore_dia / 2.0          # bore wall radius = crest (innermost)
-    trot   = int(depth // P) + 1
-    ht     = trot * P
-
-    # Root outward into nut material (mirror of external root inward)
-    x_root = d2 + 0.625 * H
-    h_root = P / 8.0
-
-    # Profile — true negative image of bolt external cutter:
-    #
-    #   Bolt:  crest OUTER (d2+offset) flat always
-    #          root  INNER (x_root)    Flat or Round  ← root_round applied here
-    #
-    #   Nut:   root  OUTER (x_root)    flat always    (standard, into material)
-    #          crest INNER (d2)        Flat or Round  ← root_round applied here
-    #
-    # So root_round=True  → rounded CREST (toward center hole)
-    #    root_round=False → flat    CREST (toward center hole)
-    #
-    fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(x_root - _sqrt3 * 3 / 80.0 * P, -0.475 * P)  # near root flank bottom
-    fm.AddPoint(d2, -h_root)                                    # crest bottom (inner)
-    if root_round:
-        # Arc midpoint goes OUTWARD from d2 — mirror of bolt arc going inward from x_root
-        # Bolt:  fm.AddArc(x_root - 0.5*0.125*P, 0, x_root,  h_root)  ← inward
-        # Nut:   fm.AddArc(d2     + 0.5*0.125*P, 0, d2,      h_root)  ← outward (mirror)
-        fm.AddArc(d2 + 0.5 * 0.125 * P, 0, d2, h_root)
-    else:
-        fm.AddPoint(d2, h_root)                                 # flat crest top
-    fm.AddPoint(x_root - _sqrt3 * 3 / 80.0 * P,  0.475 * P)  # near root flank top
-
-    wire = fm.GetClosedWire()
-    # Nut body is at z=0 to z=m (upward) — do NOT rotate 180°
-    # Wire starts slightly below z=0 so helix lead-in is below nut face
-    wire.translate(Base.Vector(0, 0, -P * 0.6))
-
-    thread_depth = 0.625 * H
-    # Helix goes UPWARD (z=0 to ht) to match nut body direction
-    # No 180° rotation — nut is opposite direction to bolt shank
-    helix      = Part.makeLongHelix(P, ht, bore_dia / 2.0, 0, False)
-    lead_helix = Part.makeLongHelix(P, P / 2.0,
-                                    bore_dia / 2.0 + 0.55 * thread_depth, 0, False)
-    lead_helix.translate(Base.Vector(-0.55 * thread_depth, 0, 0))
-
-    path  = Part.Wire([helix, lead_helix])
-    sweep = Part.BRepOffsetAPI.MakePipeShell(path)
-    sweep.setFrenetMode(True)
-    sweep.setTransitionMode(1)
-    sweep.add(wire)
-    if sweep.isReady():
-        sweep.build()
-    else:
-        raise RuntimeError("[FSThreadingMetricInternal] sweep failed")
-    sweep.makeSolid()
-    threads = sweep.shape()
-    # Box clip — keep only the region from z=-P to z=depth+P
-    # This trims the lead-in stubs above and below the nut face
-    clip_r = x_root + P
-    box = Part.makeBox(2 * clip_r, 2 * clip_r, depth + 2 * P,
-                       Base.Vector(-clip_r, -clip_r, -P))
-    return threads.common(box)
-
-
-# ── Main entry point ──────────────────────────────────────────────────────────
-
-def cut_internal_thread(nut_shape, fa, dia, depth, P_mm=None):
-    """Cut ISO metric internal thread into nut_shape.
-
-    Parameters
-    ----------
-    nut_shape : FreeCAD shape   — nut body (already cut to hex)
-    fa        : fastener attrs  — calc_diam, calc_pitch, Thread_Pitch_Nut,
-                                  Thread_Class_Nut, Thread_Root
-    dia       : float mm        — nominal diameter (fallback reference)
-    depth     : float mm        — thread depth = nut height m
-    P_mm      : float mm        — pitch override (optional)
-    """
-    import FreeCAD as _FC
-
-    P = P_mm if (P_mm and P_mm > 0) else resolve_nut_pitch(fa)
-    if not P or P <= 0:
-        _FC.Console.PrintError("[FSThreadingMetricInternal] pitch=0, skip\n")
-        return nut_shape
-
-    dia_str   = str(getattr(fa, "calc_diam", str(dia)) or str(dia))
-    pitch_str = str(P)
-    cls_str   = str(getattr(fa, "Thread_Class_Nut", "6H") or "6H")
-    root_prop = str(getattr(fa, "Thread_Root", "Flat") or "Flat").strip()
-    root_round = (root_prop == "Round")
-
-    bore_eff  = bore_dia_from_table(fa, dia_str, pitch_str, cls_str)
-
-    try:
-        _FC.Console.PrintMessage(
-            f"[NutThread] dia={dia_str} P={P:.4f}mm cls={cls_str}"
-            f" root={'Round' if root_round else 'Flat'}\n"
-            f"  bore_eff = {bore_eff:.5f} mm  depth = {depth:.3f} mm\n"
-        )
-    except Exception:
-        pass
-
-    cutter = make_internal_thread_cutter(bore_eff, P, depth, root_round=root_round)
-    return nut_shape.cut(cutter)
-
-
 # ── FreeCAD panel visibility ──────────────────────────────────────────────────
 
-def set_nut_thread_visibility(fp, thread_on):
-    """Show/hide metric internal thread properties in FreeCAD panel."""
-    if hasattr(fp, "Thread_Pitch_Nut"):
-        fp.setEditorMode("Thread_Pitch_Nut", 0 if thread_on else 2)
-    _p = ""
-    if hasattr(fp, "Thread_Pitch_Nut"):
+def set_asme_nut_visibility(fp, thread_on):
+    """Show/hide ASME internal nut thread properties in FreeCAD panel.
+
+    Property names (distinct from metric nut and ASME bolt props):
+      Thread_Type_Nut        — series  (UNC / UNF / UN / UNEF / UNS / UNR)
+      Thread_TPI_Nut         — TPI dropdown (standard values + "Custom")
+      Thread_TPI_Nut_Custom  — integer spinner (only when TPI == "Custom")
+      Thread_Class_Nut_ASME  — class   (1B / 2B / 3B)
+
+    Cascade:
+      Thread_Type_Nut   → shown whenever thread_on
+      Thread_TPI_Nut    → shown whenever thread_on
+      Thread_TPI_Nut_Custom → shown when thread_on AND Thread_TPI_Nut == "Custom"
+      Thread_Class_Nut_ASME → shown when thread_on AND a TPI is effectively selected
+    """
+    # Thread_Type_Nut: visible whenever thread is on
+    if hasattr(fp, "Thread_Type_Nut"):
+        fp.setEditorMode("Thread_Type_Nut", 0 if thread_on else 2)
+
+    # Thread_TPI_Nut: visible when thread is on
+    if hasattr(fp, "Thread_TPI_Nut"):
+        fp.setEditorMode("Thread_TPI_Nut", 0 if thread_on else 2)
+
+    # Thread_TPI_Nut_Custom: visible only when TPI == "Custom"
+    _tpi = ""
+    if hasattr(fp, "Thread_TPI_Nut"):
         try:
-            _p = str(fp.Thread_Pitch_Nut)
+            _tpi = str(fp.Thread_TPI_Nut)
         except Exception:
             pass
-    _cls_ready = thread_on and bool(_p)
-    if hasattr(fp, "Thread_Class_Nut"):
-        fp.setEditorMode("Thread_Class_Nut", 0 if _cls_ready else 2)
-    if hasattr(fp, "Thread_Root"):
-        fp.setEditorMode("Thread_Root", 0 if thread_on else 2)
+    _is_custom = thread_on and (_tpi == "Custom")
+    if hasattr(fp, "Thread_TPI_Nut_Custom"):
+        fp.setEditorMode("Thread_TPI_Nut_Custom", 0 if _is_custom else 2)
+
+    # Thread_Class_Nut_ASME: visible when thread_on AND a TPI is selected
+    _cls_ready = thread_on and bool(_tpi)
+    if hasattr(fp, "Thread_Class_Nut_ASME"):
+        fp.setEditorMode("Thread_Class_Nut_ASME", 0 if _cls_ready else 2)

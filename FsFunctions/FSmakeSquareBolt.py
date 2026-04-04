@@ -47,10 +47,11 @@ def makeSquareBolt(self, fa):
     length = fa.calc_len
 
     if fa.baseType == "ASMEB18.2.1.1":
-        TPI_tbl, F, H, R, L_T1, L_T2 = fa.dimTable
-        r     = R    * 25.4
-        s     = F    * 25.4
-        k     = H    * 25.4
+        # CSV columns: TPI, F_max, F_min, H_max, H_min, R, L_T1, L_T2 (all in inches)
+        TPI_tbl, F_max, F_min, H_max, H_min, R, L_T1, L_T2 = fa.dimTable
+        r     = R                          * 25.4
+        s     = ((F_max + F_min) / 2)     * 25.4
+        k     = ((H_max + H_min) / 2)     * 25.4
         P_tbl = 25.4 / TPI_tbl
         b_tbl = (L_T1 if length <= 6 * 25.4 else L_T2) * 25.4
     else:

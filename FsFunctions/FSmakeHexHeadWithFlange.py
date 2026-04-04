@@ -32,7 +32,9 @@ def makeHexHeadWithFlange(self, fa):
         P_tbl, b0, b1, b2, b3, c, dc, dw, e, k, kw, f, r1, s = fa.dimTable
 
     elif SType == "ASMEB18.2.1.8":
-        b0, P_tbl, c, dc, kw, r1, s = fa.dimTable
+        # CSV columns: b0, P, c, dc, kw, r1, s_max, s_min, e_max, e_min
+        b0, P_tbl, c, dc, kw, r1, s_max, s_min, e_max, e_min = fa.dimTable
+        s = (s_max + s_min) / 2
 
     elif SType in ("ISO4162", "ISO15071"):
         P_tbl, b0, b1, b2, b3, c = fa.dimTable[:6]

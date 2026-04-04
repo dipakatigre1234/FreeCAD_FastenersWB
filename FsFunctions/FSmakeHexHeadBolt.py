@@ -58,22 +58,31 @@ def makeHexHeadBolt(self, fa):
         b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
 
     elif fa.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3"):
-        if len(fa.dimTable) == 9:
-            b1_tbl, b2_tbl, P_tbl, c, _dw_unused, e, k, r, s = fa.dimTable
-        else:
-            b1_tbl, b2_tbl, P_tbl, c, e, k, r, s = fa.dimTable
+        # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
+        b1_tbl, b2_tbl, P_tbl, c, _dw_unused, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
         dw    = None
 
     elif fa.baseType == "ASMEB18.2.1.6":
-        b_tbl, P_tbl, c, _dw6, e, k, r, s = fa.dimTable
-        dw = None
+        # CSV columns: b, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
+        b_tbl, P_tbl, c, _dw6, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
+        dw = dw
         if length > 6 * 25.4:
             b_tbl += 6.35
 
     elif fa.baseType == "ASMEB18.2.1.7":
-        b1_tbl, b2_tbl, P_tbl, c, _dw7, e, k, r, s = fa.dimTable
-        dw    = None
+        # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
+        b1_tbl, b2_tbl, P_tbl, c, _dw7, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        e = (e_max + e_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
+        dw    = _dw7
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
 
     else:

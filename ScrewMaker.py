@@ -312,13 +312,16 @@ screwTables = {
     "ASMEB18.2.2.1A": ("Nut", "makeHexNut"),
     "ASMEB18.2.2.1B": ("Nut", "makeSquareNut"),
     "ASMEB18.2.2.2": ("Nut", "makeSquareNut"),
-    "ASMEB18.2.2.4A": ("Nut", "makeHexNut"),
-    "ASMEB18.2.2.4B": ("Nut", "makeHexNut"),
-    "ASMEB18.2.2.10A": ("Nut", "makeHexNut"),  #HEAVY HEX NUT(TABLE 10)
-    "ASMEB18.2.2.10B": ("Nut", "makeHexNut"),   #HEAVY HEX JAM NUT(TABLE 10)
-    "ASMEB18.2.2.5": ("Nut", "makeCastleNut"),
-    "ASMEB18.2.2.12": ("Nut", "makeHexNutWFlange"),
-    "ASMEB18.2.2.13": ("Nut", "makeHexNut"),
+    "ASMEB18.2.2.3": ("Nut", "makeHexNut"),       # Hexagon nuts (Table 3)
+    "ASMEB18.2.2.5A": ("Nut", "makeHexNut"),      # Hex Nuts (Table 5A)
+    "ASMEB18.2.2.5B": ("Nut", "makeHexNut"),      # Hex Jam Nuts (Table 5B)
+    "ASMEB18.2.2.11A": ("Nut", "makeHexNut"),     # Heavy Hex Nut (Table 11)
+    "ASMEB18.2.2.11B": ("Nut", "makeHexNut"),     # Heavy Hex Jam Nut (Table 11)
+    "ASMEB18.2.2.6": ("Nut", "makeCastleNut"),    # Hex Slotted Thin Nuts (Table 6)
+    "ASMEB18.2.2.8": ("Nut", "makeCastleNut"),    # Hex Slotted Wide Nuts (Table 8)
+    "ASMEB18.2.2.13A": ("Nut", "makeHexNutWFlange"),  # Hex Flange Nuts (Table 13A)
+    "ASMEB18.2.2.13B": ("Nut", "makeHexNutWFlange"),  # Large Hex Flange Nuts (Table 13B)
+    "ASMEB18.2.2.14": ("Nut", "makeHexNut"),      # Hex Coupling Nuts (Table 14)
     "ASMEB18.6.9A": ("Nut", "makeWingNut"),
     "SAEJ483a1": ("Nut", "makeCupNut"),
     "SAEJ483a2": ("Nut", "makeCupNut"),

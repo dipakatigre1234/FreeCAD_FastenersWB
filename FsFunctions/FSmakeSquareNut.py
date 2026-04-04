@@ -46,14 +46,18 @@ def makeSquareNut(self, fa):
         s, m, di, P = fa.dimTable
         top_chamfer = False
     elif SType == "ASMEB18.2.2.1B":
-        P, _, _, m, s = fa.dimTable
+        # CSV columns: P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm)
+        P, da, e_max, e_min, m_max, m_min, s_max, s_min = fa.dimTable
+        m = (m_max + m_min) / 2
+        s = (s_max + s_min) / 2
         top_chamfer = False
     elif SType == "ASMEB18.2.2.2":
-        TPI, F, H = fa.dimTable
+        # CSV columns: TPI, F_max, F_min, H_max, H_min (inches)
+        TPI, F_max, F_min, H_max, H_min = fa.dimTable
         P = 1 / TPI * 25.4
-        s = F * 25.4
+        s = ((F_max + F_min) / 2) * 25.4
         dw = s
-        m = H * 25.4
+        m = ((H_max + H_min) / 2) * 25.4
         top_chamfer = True
     # create the nut body using a recantular prism primitive
     nut = Part.makeBox(s, s, m, Base.Vector(-s / 2, -s / 2, 0.0))

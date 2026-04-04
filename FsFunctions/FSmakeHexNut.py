@@ -248,23 +248,27 @@ def makeHexNut(self, fa):
     cham_i = cham_i_delta * math.tan(math.radians(15.0))
 
     # ── Nut body profile (revolved solid) ─────────────────────────────────────
-    # e/2 = width-across-corners radius (hex outer corner radius)
-    # For ISO/DIN: e = s*2/sqrt3, so e/2 = s/sqrt3 — identical to previous behaviour
-    # For ASME: e = (e_max+e_min)/2 from CSV — actual standard value used
+    # Chamfer radial position must match makeHexPrism(s) corner radius = s/sqrt3.
+    # e is used only for chamfer HEIGHT: cham = (e-s)*sin(15°) for ASME.
+    # Using e/2 here would mismatch the hex prism corner (s/sqrt3 ≠ e/2 for ASME).
     fm = FastenerBase.FSFaceMaker()
-    fm.AddPoint(_bore_r,   m - cham_i)
-    fm.AddPoint(da / 2.0,  m)
-    fm.AddPoint(s / 2.0,   m)
-    fm.AddPoint(e / 2.0,   m - cham)
-    fm.AddPoint(e / 2.0,   cham)
-    fm.AddPoint(s / 2.0,   0.0)
-    fm.AddPoint(da / 2.0,  0.0)
-    fm.AddPoint(_bore_r,   0.0 + cham_i)
+    fm.AddPoint(_bore_r,      m - cham_i)
+    fm.AddPoint(da / 2.0,     m)
+    fm.AddPoint(s / 2.0,      m)
+    fm.AddPoint(s / sqrt3,    m - cham)
+    fm.AddPoint(s / sqrt3,    cham)
+    fm.AddPoint(s / 2.0,      0.0)
+    fm.AddPoint(da / 2.0,     0.0)
+    fm.AddPoint(_bore_r,      0.0 + cham_i)
     head = self.RevolveZ(fm.GetFace())
 
     # ── Hexagon prism cut ─────────────────────────────────────────────────────
+    # removeSplitter() merges the coplanar face patches on each flat that result
+    # from the boolean common of three distinct outer surface segments
+    # (bottom chamfer cone + cylinder + top chamfer cone) with the hex prism.
+    # Without it, each flat shows as two or three separate faces with seam lines.
     extrude = self.makeHexPrism(s, m)
-    nut = head.common(extrude)
+    nut = head.common(extrude).removeSplitter()
 
     # ── Modelled threads (inner thread cutter) ────────────────────────────────
     #

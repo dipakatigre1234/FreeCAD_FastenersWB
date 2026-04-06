@@ -130,7 +130,7 @@ def makeCountersunkHeadScrew(self, fa):
 
     FreeCAD.Console.PrintMessage(
         f"[Dipak] Threading: dia={dia:.4f}mm, "
-        f"thread_dia={thread_dia:.4f}mm, {log_extra}, "
+        f"thread_dia={thread_dia:.4f}mm, "
         f"allowance={dia - thread_dia:.4f}mm, "
         f"thread_length={b:.2f}mm\n"
     )

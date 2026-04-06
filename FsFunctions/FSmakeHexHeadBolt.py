@@ -72,7 +72,7 @@ def makeHexHeadBolt(self, fa):
         e = (e_max + e_min) / 2
         k = (k_max + k_min) / 2
         s = (s_max + s_min) / 2
-        dw = dw
+        dw = _dw6
         if length > 6 * 25.4:
             b_tbl += 6.35
 

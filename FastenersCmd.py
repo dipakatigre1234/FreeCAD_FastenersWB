@@ -111,7 +111,7 @@ ScrewParametersLC = {"Type", "Diameter", "MatchOuter",
                      "TPitch", "TLength", "TThread", "TType"}
 RodParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                  "LeftHanded", "lengthArbitrary", "DiameterCustom", "PitchCustom",
-                 "TPitch", "TLength", "TThread"}
+                 "TPitch", "TLength", "TThread", "TType"}
 NutParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded",
                   "TNutThread", "TPitch"}
 WoodInsertParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded"}
@@ -451,9 +451,19 @@ def FSUpdateFormatString(fmtstr, type):
 # Type classification helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _is_asme_std(type_str):
+    """True for ALL ASME standard types.
+    Covers 'ASME...' names (bolts/nuts) AND inch rod/tap/die types
+    (ThreadedRodInch, ScrewTapInch, ScrewDieInch) which do not start with 'ASME'
+    but belong to the ASME standard per FastenersStandardMap.
+    """
+    s = str(type_str)
+    return s.startswith("ASME") or FastenersStandardMap.get(s) == "ASME"
+
+
 def _is_asme(fp):
     try:
-        return str(fp.Type).startswith("ASME")
+        return _is_asme_std(fp.Type)
     except Exception:
         return False
 
@@ -461,7 +471,7 @@ def _is_asme_external(fp):
     """True only for ASME types with external thread (TThread), not nuts."""
     try:
         params = FSGetParams(fp.Type)
-        return str(fp.Type).startswith("ASME") and "TThread" in params
+        return _is_asme_std(fp.Type) and "TThread" in params
     except Exception:
         return False
 
@@ -486,7 +496,7 @@ def _set_thread_props_visibility(fp, thread_on):
 
 def _set_thread_props_visibility_inner(fp, thread_on):
     params = FSGetParams(fp.Type)
-    is_asme_type = str(fp.Type).startswith("ASME")
+    is_asme_type = _is_asme_std(fp.Type)
     has_ext      = "TThread"    in params
     has_nut      = "TNutThread" in params
     is_metric_nut = has_nut and not is_asme_type
@@ -551,6 +561,9 @@ def _update_metric_mean_dia(fp):
 def _vis_asme_external(fp, thread_on):
     if hasattr(fp, "ThreadPitch"):
         fp.setEditorMode("ThreadPitch", 2)
+    # PitchCustom is metric-only — hide it for all ASME types (TPI is used instead)
+    if hasattr(fp, "PitchCustom"):
+        fp.setEditorMode("PitchCustom", 2)
     if hasattr(fp, "Thread_Length"):
         fp.setEditorMode("Thread_Length", 0 if thread_on else 2)
     if hasattr(fp, "Thread_Type"):
@@ -611,7 +624,7 @@ class FSScrewObject(FSBaseObject):
 
     def onChanged(self, fp, prop):
         if prop == "Diameter" and not _is_asme_external(fp) \
-                and not str(getattr(fp, "Type", "")).startswith("ASME") \
+                and not _is_asme_std(getattr(fp, "Type", "")) \
                 and hasattr(fp, "Thread_Pitch"):
             _new_p = _TM.valid_pitches_for_dia(str(getattr(fp, "Diameter", "") or ""))
             if _new_p:
@@ -801,7 +814,7 @@ class FSScrewObject(FSBaseObject):
                     or hasattr(fp, "Thread_Pitch")):
                 return
             thread_on = hasattr(fp, "Thread") and bool(fp.Thread)
-            _is_m = not str(getattr(fp, "Type", "")).startswith("ASME")
+            _is_m = not _is_asme_std(getattr(fp, "Type", ""))
             if _is_m and "TPitch" in params and "TThread" in params:
                 _dia_oc = str(getattr(fp, "Diameter", "") or "")
                 if not hasattr(fp, "Thread_Pitch"):
@@ -941,8 +954,8 @@ class FSScrewObject(FSBaseObject):
             obj.setEditorMode("Thread_Length", 2)
 
         _this_type_early = str(type) if type else str(getattr(obj, "Type", ""))
-        _is_metric_ext = not _this_type_early.startswith("ASME") and "TThread" in params
-        _is_asme_ext   = _this_type_early.startswith("ASME") and "TThread" in params
+        _is_metric_ext = not _is_asme_std(_this_type_early) and "TThread" in params
+        _is_asme_ext   = _is_asme_std(_this_type_early) and "TThread" in params
         if _is_metric_ext and not hasattr(obj, "Thread_Root"):
             obj.addProperty("App::PropertyEnumeration", "Thread_Root", "Parameters",
                 translate("FastenerCmd",
@@ -954,7 +967,7 @@ class FSScrewObject(FSBaseObject):
                 pass
             obj.setEditorMode("Thread_Root", 0)
 
-        if "TPitch" in params and not _this_type_early.startswith("ASME"):
+        if "TPitch" in params and not _is_asme_std(_this_type_early):
             _dia_v = str(getattr(obj, "Diameter", diameter) or "")
             if _dia_v in ("Auto", "", "Custom"):
                 try:
@@ -998,7 +1011,7 @@ class FSScrewObject(FSBaseObject):
                 obj.setEditorMode("Thread_Class_ISO", 2)
 
         _this_type   = str(type) if type else str(getattr(obj, "Type", ""))
-        _is_asme_t   = _this_type.startswith("ASME")
+        _is_asme_t   = _is_asme_std(_this_type)
         _has_ext_t   = "TThread" in params
         _has_nut_t   = "TNutThread" in params
 
@@ -1329,7 +1342,7 @@ class FSScrewObject(FSBaseObject):
 
         thread_on = (("TThread" in params or "TNutThread" in params) and
                      hasattr(fp,"Thread") and bool(fp.Thread))
-        asme_type = str(fp.Type).startswith("ASME")
+        asme_type = _is_asme_std(fp.Type)
         has_ext   = "TThread" in params
 
         _is_metric_nut_exec = thread_on and not asme_type and "TNutThread" in params

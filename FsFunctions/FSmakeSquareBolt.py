@@ -114,6 +114,9 @@ def makeSquareBolt(self, fa):
     shape = shape.common(head_square)
 
     # ── Thread cutter ─────────────────────────────────────────────────────
+    is_asme = fa.baseType.startswith("ASME")
+    d_eff   = thread_dia   # Dipak-formula diameter, consistent with body profile
+
     if fa.Thread:
 
         tl_cut   = thread_length

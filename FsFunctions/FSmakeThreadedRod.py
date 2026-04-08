@@ -118,9 +118,12 @@ def makeThreadedRod(self, fa):
     # ── 3. Geometry constants ─────────────────────────────────────────────────
     cham   = P          # end-chamfer axial width  = 1 pitch
     taper  = P          # thread→shank taper width = 1 pitch
-    extra  = 2.0 * P    # each cutter extends this far past the shank junction
-                        # so lead-in/out lands inside the shank, not at the
-                        # visible thread-to-shank boundary
+    #
+    # extra = 0: cutters cut EXACTLY half per end — no extra thread added.
+    # Smooth entry/exit at the shank junction is provided by the BODY PROFILE
+    # TAPER (conical ramp, rt → rs over 1 pitch).  The helix lead-in/out
+    # naturally coincides with the taper zone and fades gracefully there.
+    extra  = 0.0
     length = fa.calc_len
 
     _raw_tl = getattr(fa, "calc_thread_length", 0.0) or 0.0

@@ -5,23 +5,23 @@
 *   Original code by:                                                     *
 *   Ulrich Brammer <ulrich1a[at]users.sourceforge.net>                    *
 *                                                                         *
-*   This file is a supplement to the FreeCAD CAx development system.      *
+*   This file is a supplement to the FreeCAD CAx development system.     *
 *                                                                         *
 *   This program is free software; you can redistribute it and/or modify  *
-*   it under the terms of the GNU Lesser General Public License (LGPL)    *
-*   as published by the Free Software Foundation; either version 2 of     *
-*   the License, or (at your option) any later version.                   *
-*   for detail see the LICENCE text file.                                 *
+*   it under the terms of the GNU Lesser General Public License (LGPL)   *
+*   as published by the Free Software Foundation; either version 2 of    *
+*   the License, or (at your option) any later version.                  *
+*   for detail see the LICENCE text file.                                *
 *                                                                         *
-*   This software is distributed in the hope that it will be useful,      *
+*   This software is distributed in the hope that it will be useful,     *
 *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
-*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
-*   GNU Library General Public License for more details.                  *
+*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the        *
+*   GNU Library General Public License for more details.                 *
 *                                                                         *
-*   You should have received a copy of the GNU Library General Public     *
-*   License along with this macro; if not, write to the Free Software     *
-*   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
-*   USA                                                                   *
+*   You should have received a copy of the GNU Library General Public    *
+*   License along with this macro; if not, write to the Free Software    *
+*   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 *
+*   USA                                                                  *
 *                                                                         *
 ***************************************************************************
 """
@@ -36,46 +36,76 @@ import FSThreadingMetric as _TM
 
 
 def makeThreadedRod(self, fa):
-    """make a length of standard threaded rod.
+    """Make a threaded rod: full thread OR partial thread with smooth centre shank.
 
-    Supported types:
-    - ThreadedRod      : Metric threaded rod (ISO/DIN)
-    - ThreadedRodInch  : ASME UNC/UNF inch threaded rod
+    PARTIAL THREAD ROD  (Thread_Length = L  <  rod length)
+    ═══════════════════════════════════════════════════════
+    The rod has THREE sections — thread zone / plain shank / thread zone.
+    Each thread zone = L / 2.  Plain shank = rod_length - L.
 
-    Threading parameters:
-    - ASME  : Thread_Type (UNC/UNF), Thread_TPI, Thread_Class via FSThreadingASME
-    - Metric: Thread_Pitch, Thread_Class_ISO, Thread_Root via FSThreadingMetric
+        z=0     z=-half      z=-(L-half)   z=-L
+        ├── thread ─┤── shank ──┤── thread ──┤
 
-    d_eff (effective diameter for body + thread cutter) from threading module
-    get_shank_dia() — same approach as hex head bolts.
+    Both thread zones start AND end smoothly:
+      • Outer end  : standard end-chamfer (body tapers to zero) at both rod tips
+      • Inner end  : conical taper (thread radius → shank radius) at shank junction
+
+    EQUAL THREADING — WHY CUTTERS EXTEND PAST THE SHANK JUNCTION
+    ══════════════════════════════════════════════════════════════
+    Every MakePipeShell helix has a lead-in (~1P shallow) at its START and
+    a lead-out (~1P shallow) at its END.
+
+    Without extension (old code with _extra=0):
+      Lead-OUT of top cutter  → lands at z=-half  (visible shank junction) ✗
+      Lead-IN  of bottom cutter → lands at z=-(L-half) (visible) ✗
+    Result: 1-2 turns near each shank end look narrower than the rest.
+
+    Fix — extend each cutter by  extra = 2 × P  PAST the shank boundary:
+      TOP cutter   : oz = 0,                  tl = half + extra
+      BOTTOM cutter: oz = -(L - half - extra), tl = half + extra
+
+      Lead-out of TOP   → inside shank (z=−half … −(half+extra))    ✓ hidden
+      Lead-in  of BOTTOM → inside shank (z=−(L−half−extra) … −(L−half)) ✓ hidden
+
+    Every visible thread turn is now identical depth/width on both ends.
+
+    PROFILE GEOMETRY  (partial mode)
+    ══════════════════════════════════
+      cham  = P   axial width of end-chamfer
+      taper = P   axial width of thread→shank conical taper
+      rt = d_eff/2   thread body radius  (from threading module)
+      rs = dia/2     shank radius        (user nominal, ≥ rt)
+
+      (0,         0)           centre top
+      (rt-cham,   0)           top face outer edge
+      (rt,       -cham)        top end-chamfer complete
+      (rt,       -(half-taper)) thread straight ends
+      (rs,       -half)        TOP TAPER end → shank begins   [conical ramp]
+      (rs,       -(L-half))    shank ends
+      (rt,       -(L-half+taper)) BOTTOM TAPER end → thread resumes
+      (rt,       -(L-cham))    bottom thread straight ends
+      (rt-cham,  -L)           bottom end-chamfer complete
+      (0,        -L)           centre bottom
     """
+
     ThreadType = fa.calc_diam
     is_asme    = fa.baseType == 'ThreadedRodInch'
 
-    # ── 1. Base nominal diameter and table pitch ──────────────────────────────
+    # ── 1. Nominal diameter and table pitch ───────────────────────────────────
     if fa.Diameter != 'Custom':
         dia = self.getDia(ThreadType, False)
         if fa.baseType == 'ThreadedRod':
             P, tunIn, tunEx = fa.dimTable
         elif fa.baseType == 'ThreadedRodInch':
             P = fa.dimTable[0]
-    else:                           # custom pitch and diameter
+    else:
         P = fa.calc_pitch if fa.calc_pitch else 1.0
         if self.sm3DPrintMode:
             dia = self.smScrewThrScaleA * float(fa.calc_diam) + self.smScrewThrScaleB
         else:
             dia = float(fa.calc_diam)
 
-    # ── 2. Resolve effective diameter and pitch from threading modules ─────────
-    #
-    #  ASME  : d_eff from FSThreadingASME.get_shank_dia()
-    #          P from fa.calc_pitch  (set by execute() from Thread_TPI selection)
-    #          Properties shown: Thread_Type (UNC/UNF), Thread_TPI, Thread_Class
-    #
-    #  Metric: d_eff from FSThreadingMetric.get_shank_dia()
-    #          P from fa.calc_pitch  (set by execute() from Thread_Pitch selection)
-    #          Properties shown: Thread_Pitch, Thread_Class_ISO, Thread_Root
-    #
+    # ── 2. Effective diameter and pitch override ──────────────────────────────
     if is_asme:
         d_eff = _TA.get_shank_dia(fa, dia)
         if fa.calc_pitch is not None and fa.calc_pitch > 0:
@@ -85,85 +115,61 @@ def makeThreadedRod(self, fa):
         if fa.calc_pitch is not None and fa.calc_pitch > 0:
             P = fa.calc_pitch
 
-    # ── 3. Rod body revolve profile ───────────────────────────────────────────
-    #
-    #  Two diameters are used:
-    #    d_eff  — effective thread OD from FSThreadingASME / FSThreadingMetric
-    #             (threaded zones + end chamfers)
-    #    dia    — user-specified nominal diameter (e.g. 5/8" = 15.875 mm)
-    #             (unthreaded smooth middle zone)
-    #
-    #  Fully threaded (Thread_Length = 0):
-    #    Simple cylinder at d_eff, chamfer at each outer end.
-    #
-    #  Partial threading (Thread_Length = L,  half = L/2):
-    #    Transition chamfer goes from thread OD (d_eff/2) to smooth OD (dia/2)
-    #    — same style as the outer end chamfers, over 1 × pitch axial distance.
-    #
-    #    z = 0                → top face
-    #    z = -cham            → top end chamfer end           (r = d_eff/2)
-    #    z = -(half-cham)     → top thread zone               (r = d_eff/2)
-    #    z = -half            → transition → smooth OD        (r = dia/2)
-    #    z = -(len-half)      → smooth zone end               (r = dia/2)
-    #    z = -(len-half+cham) → transition back → thread OD   (r = d_eff/2)
-    #    z = -(len-cham)      → bottom thread zone            (r = d_eff/2)
-    #    z = -len             → bottom end chamfer            (r = d_eff/2 - cham)
-    #
-    cham   = P          # chamfer depth (axial) = 1 × pitch
+    # ── 3. Geometry constants ─────────────────────────────────────────────────
+    cham   = P          # end-chamfer axial width  = 1 pitch
+    taper  = P          # thread→shank taper width = 1 pitch
+    extra  = 2.0 * P    # each cutter extends this far past the shank junction
+                        # so lead-in/out lands inside the shank, not at the
+                        # visible thread-to-shank boundary
     length = fa.calc_len
 
     _raw_tl = getattr(fa, "calc_thread_length", 0.0) or 0.0
     _half   = float(_raw_tl) / 2.0
-    # Use partial profile only when there is room for transition chamfers
-    _partial = _raw_tl > 0 and _raw_tl < length and _half > 2 * cham
 
-    _r_thread = d_eff / 2.0   # thread zone radius  (from threading module)
-    _r_smooth = dia  / 2.0    # smooth zone radius  (user nominal diameter)
+    # Partial mode: thread_length set, < total length, and each half zone
+    # is long enough to hold  chamfer + straight + taper  (minimum = cham+taper)
+    _partial = (
+        _raw_tl > 0
+        and _raw_tl < length
+        and _half > (cham + taper)
+    )
 
+    _rt = d_eff / 2.0   # thread zone radius  (from threading module)
+    _rs = dia   / 2.0   # smooth shank radius (user nominal, >= _rt)
+
+    # ── 4. Revolve profile ────────────────────────────────────────────────────
     fm = FSFaceMaker()
-    fm.AddPoint(0,              0)
-    fm.AddPoint(_r_thread - cham, 0)
-    fm.AddPoint(_r_thread,     -cham)              # top end chamfer
+
+    fm.AddPoint(0.0,        0.0)
+    fm.AddPoint(_rt - cham, 0.0)        # top face outer edge
+    fm.AddPoint(_rt,       -cham)       # top end-chamfer done
 
     if _partial:
-        #  TOP inner boundary  (thread zone exits → smooth section)
-        #    same style as outer end chamfer: body shrinks to relief depth,
-        #    then steps UP to smooth OD — gives smooth thread exit on both sides
-        fm.AddPoint(_r_thread,        -(_half - cham))   # top thread zone
-        fm.AddPoint(_r_thread - cham, -_half)            # contract → relief (smooth exit)
-        fm.AddPoint(_r_smooth,        -_half)            # step up to smooth OD
+        # top thread straight (stays at thread radius up to taper start)
+        fm.AddPoint(_rt,   -(_half - taper))
 
-        #  SMOOTH zone  (parallel cylinder at user nominal diameter)
-        fm.AddPoint(_r_smooth,        -(length - _half))
+        # conical taper: thread radius → shank radius  (smooth runout)
+        fm.AddPoint(_rs,   -_half)
 
-        #  BOTTOM inner boundary  (smooth section exits → thread zone)
-        #    mirror of top: step DOWN to relief depth, then expand to thread OD
-        fm.AddPoint(_r_thread - cham, -(length - _half)) # step down to relief depth
-        fm.AddPoint(_r_thread,        -(length - _half + cham))  # expand → thread OD
+        # smooth shank (straight cylinder at nominal diameter)
+        fm.AddPoint(_rs,   -(length - _half))
 
-        fm.AddPoint(_r_thread,        -(length - cham))  # bottom thread zone
+        # conical taper: shank radius → thread radius  (mirror of top)
+        fm.AddPoint(_rt,   -(length - _half + taper))
+
+        # bottom thread straight
+        fm.AddPoint(_rt,   -(length - cham))
     else:
-        fm.AddPoint(_r_thread, -length + cham)     # fully threaded straight section
+        # fully threaded: straight cylinder from end-chamfer to end-chamfer
+        fm.AddPoint(_rt,   -(length - cham))
 
-    fm.AddPoint(_r_thread - cham, -length)
-    fm.AddPoint(0,              -length)
+    fm.AddPoint(_rt - cham, -length)    # bottom end-chamfer done
+    fm.AddPoint(0.0,        -length)
+
     screw = self.RevolveZ(fm.GetFace())
 
-    # ── 4. Threading ──────────────────────────────────────────────────────────
-    #
-    #  Thread_Length = 0  → fully threaded (one cut, full length)
-    #  Thread_Length = L  → threaded from BOTH ends, each end L/2:
-    #       Top end   : offset_z = 0,            tl = L/2
-    #       Bottom end: offset_z = -(length-L/2), tl = L/2
-    #
-    #  Example: rod = 20mm, Thread_Length = 10mm
-    #       → top 5mm threaded  (z = 0 to -5)
-    #       → bottom 5mm threaded (z = -15 to -20)
-    #       → middle 10mm unthreaded
-    #
+    # ── 5. Thread cutting ─────────────────────────────────────────────────────
     if fa.Thread:
-        raw_tlen  = getattr(fa, "calc_thread_length", 0.0) or 0.0
-        half      = float(raw_tlen) / 2.0
 
         def _cut(shape, tl, oz):
             if is_asme:
@@ -171,14 +177,20 @@ def makeThreadedRod(self, fa):
             else:
                 return _TM.cut_thread(shape, fa, d_eff, tl, oz, P)
 
-        if raw_tlen <= 0 or raw_tlen >= length:
-            # Thread_Length = 0 or >= total length → fully threaded
+        if not _partial:
+            # fully threaded — single cutter end to end
             screw = _cut(screw, length, 0.0)
         else:
-            # Thread from both ends, half per end
-            # Top end: starts at z = 0, goes down half
-            screw = _cut(screw, half, 0.0)
-            # Bottom end: starts at z = -(length - half), goes down half
-            screw = _cut(screw, half, -(length - half))
+            # TOP cutter
+            #   starts at z = 0  (rod face — lead-in invisible at chamfer)
+            #   ends   at z = -(half + extra)  — 2P inside smooth shank
+            #   lead-out lands inside shank, not at visible junction  ✓
+            screw = _cut(screw, _half + extra, 0.0)
+
+            # BOTTOM cutter
+            #   starts at z = -(length - half - extra) — 2P before shank junction
+            #   ends   at z = -length  (rod face — lead-out invisible at chamfer)
+            #   lead-in  lands inside shank, not at visible junction  ✓
+            screw = _cut(screw, _half + extra, -(length - _half - extra))
 
     return screw

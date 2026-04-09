@@ -59,30 +59,27 @@ def makeHexHeadBolt(self, fa):
 
     elif fa.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3"):
         # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
-        b1_tbl, b2_tbl, P_tbl, c, _dw_unused, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        b1_tbl, b2_tbl, P_tbl, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
         e = (e_max + e_min) / 2
         k = (k_max + k_min) / 2
         s = (s_max + s_min) / 2
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
-        dw    = None
 
     elif fa.baseType == "ASMEB18.2.1.6":
         # CSV columns: b, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
-        b_tbl, P_tbl, c, _dw6, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        b_tbl, P_tbl, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
         e = (e_max + e_min) / 2
         k = (k_max + k_min) / 2
         s = (s_max + s_min) / 2
-        dw = _dw6
         if length > 6 * 25.4:
             b_tbl += 6.35
 
     elif fa.baseType == "ASMEB18.2.1.7":
         # CSV columns: b1, b2, P, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min
-        b1_tbl, b2_tbl, P_tbl, c, _dw7, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
+        b1_tbl, b2_tbl, P_tbl, c, dw, e_max, e_min, k_max, k_min, r, s_max, s_min = fa.dimTable
         e = (e_max + e_min) / 2
         k = (k_max + k_min) / 2
         s = (s_max + s_min) / 2
-        dw    = _dw7
         b_tbl = b2_tbl if length > 6 * 25.4 else b1_tbl
 
     else:
@@ -149,6 +146,8 @@ def makeHexHeadBolt(self, fa):
     #  HEAD  (z = 0 → k):  s, k, e, c, dw, r  ← fa.dimTable  (never deviated)
     #  SHANK (z = 0 → -length):  tr, d_eff     ← threading module
     #
+    # Chamfer radial position must match makeHexPrism(s) corner = s/sqrt3.
+    # e drives chamfer HEIGHT only: cham = (e-s)*sin(15°) for ASME.
     fm = FSFaceMaker()
     fm.AddPoint(0.0,           k)
     fm.AddPoint(s / 2.0,       k)

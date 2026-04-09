@@ -317,7 +317,7 @@ def get_shank_dia(fa, dia_fallback):
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
+def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None, flip=False):
     """Cut ISO metric thread into shape.
 
     d_cutter comes from get_shank_dia() — same deviated value used for
@@ -370,6 +370,10 @@ def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
 
     tc = make_metric_thread_cutter(d_cutter, P, tl, root_round=root_round)
     tc.translate(_FC.Base.Vector(0, 0, offset_z))
+    if flip:
+        mid_z = offset_z - tl / 2.0
+        tc = tc.mirror(_FC.Base.Vector(0, 0, mid_z),
+                       _FC.Base.Vector(0, 0, 1))
     return shape.cut(tc)
 
 

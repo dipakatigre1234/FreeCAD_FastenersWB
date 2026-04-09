@@ -62,16 +62,17 @@ def makeFlangedSquareHeadBolt(self, fa):
     raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
     b = min(float(raw_tlen), length) if raw_tlen > 0.0 else b_tbl
 
-    # ── Thread diameter: metric formula ──────────────────────────────────
-    # thread_dia = dia - 0.15 * P
-    thread_dia = dia - 0.15 * P
-    tr         = thread_dia / 2.0
+    # ── Effective thread diameter from proper threading module ────────────
+    is_asme = fa.baseType.startswith("ASME")
+    if is_asme:
+        d_eff = _TA.get_shank_dia(fa, dia)
+    else:
+        d_eff = _TM.get_shank_dia(fa, dia)
+    tr = d_eff / 2.0
 
     FreeCAD.Console.PrintMessage(
-        f"[Dipak] Threading: dia={dia:.4f}mm, "
-        f"thread_dia={thread_dia:.4f}mm, P={P:.3f}mm, "
-        f"allowance={dia - thread_dia:.4f}mm, "
-        f"thread_length={b:.2f}mm\n"
+        f"[FlangedSquareBolt] dia={dia:.4f}mm  d_eff={d_eff:.4f}mm  "
+        f"P={P:.4f}mm  thread_length={b:.2f}mm\n"
     )
 
     # ── Square head revolve (unchanged — uses s/e geometry, not dia) ──────

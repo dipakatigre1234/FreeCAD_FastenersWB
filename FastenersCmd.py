@@ -710,7 +710,16 @@ class FSScrewObject(FSBaseObject):
             _dia_an  = str(getattr(fp, "Diameter", "") or "")
             _type_an = str(getattr(fp, "Thread_Type_Nut", "UNC") or "UNC")
             _tpi_an  = str(getattr(fp, "Thread_TPI_Nut", "") or "")
-            if _tpi_an and hasattr(fp, "Thread_Class_Nut_ASME"):
+            # show/hide custom spinner
+            _is_cust_nut = (_tpi_an == "Custom")
+            if hasattr(fp, "Thread_TPI_Nut_Custom"):
+                fp.setEditorMode("Thread_TPI_Nut_Custom", 0 if _is_cust_nut else 2)
+                if not _is_cust_nut and _tpi_an:
+                    try:
+                        fp.Thread_TPI_Nut_Custom = float(_tpi_an)
+                    except (ValueError, TypeError):
+                        pass
+            if _tpi_an and _tpi_an != "Custom" and hasattr(fp, "Thread_Class_Nut_ASME"):
                 _ncls = _TAI.valid_classes_for_dia_tpi_type(_dia_an, _tpi_an, _type_an) or ["2B"]
                 try:
                     _cur_cls = str(fp.Thread_Class_Nut_ASME)
@@ -774,13 +783,13 @@ class FSScrewObject(FSBaseObject):
 
                 if _tpi_s != "Custom" and _tpi_s and hasattr(fp, "Thread_TPI_Custom"):
                     try:
-                        fp.Thread_TPI_Custom = int(float(_tpi_s))
+                        fp.Thread_TPI_Custom = float(_tpi_s)
                     except (ValueError, TypeError):
                         pass
 
                 if hasattr(fp, "Thread_Class"):
                     if _tpi_s == "Custom":
-                        _cust_val = int(getattr(fp, "Thread_TPI_Custom", 0) or 0)
+                        _cust_val = float(getattr(fp, "Thread_TPI_Custom", 0) or 0)
                         if _cust_val > 0:
                             _near = _TA.nearest_tpi(_cust_val, _nom, _tt)
                             _cls_opts = _TA.valid_classes_for_series_tpi(_nom, _tt, _near)
@@ -1098,6 +1107,12 @@ class FSScrewObject(FSBaseObject):
                 except Exception:
                     pass
                 obj.setEditorMode("Thread_TPI_Nut", 2)
+            # Thread_TPI_Nut_Custom — float spinner shown only when TPI == "Custom"
+            if not hasattr(obj, "Thread_TPI_Nut_Custom"):
+                obj.addProperty("App::PropertyFloat", "Thread_TPI_Nut_Custom", "Parameters",
+                    translate("FastenerCmd", "Thread_TPI_Nut Custom value (supports decimals, e.g. 4.5)")
+                ).Thread_TPI_Nut_Custom = 0.0
+                obj.setEditorMode("Thread_TPI_Nut_Custom", 2)
             # Thread_Class_Nut_ASME — class dropdown (1B/2B/3B)
             if not hasattr(obj, "Thread_Class_Nut_ASME"):
                 _at_now2 = ""
@@ -1162,14 +1177,14 @@ class FSScrewObject(FSBaseObject):
                     _cur_tpi_str = str(obj.Thread_TPI)
                 except Exception:
                     pass
-                _init_custom = 0
+                _init_custom = 0.0
                 if _cur_tpi_str and _cur_tpi_str != "Custom":
                     try:
-                        _init_custom = int(float(_cur_tpi_str))
+                        _init_custom = float(_cur_tpi_str)
                     except (ValueError, TypeError):
                         pass
-                obj.addProperty("App::PropertyInteger", "Thread_TPI_Custom", "Parameters",
-                    translate("FastenerCmd", "Thread_TPI Custom value")
+                obj.addProperty("App::PropertyFloat", "Thread_TPI_Custom", "Parameters",
+                    translate("FastenerCmd", "Thread_TPI Custom value (supports decimals, e.g. 4.5)")
                 ).Thread_TPI_Custom = _init_custom
                 obj.setEditorMode("Thread_TPI_Custom", 2)
             if not hasattr(obj, "Thread_Class"):
@@ -1390,6 +1405,21 @@ class FSScrewObject(FSBaseObject):
                     fp.Thread_TPI_Nut = _atpis_e
                     fp.Thread_TPI_Nut = _cur_atpi if _cur_atpi in _atpis_e else _atpis_e[0]
                 except Exception: pass
+            # Thread_TPI_Nut_Custom — float spinner for custom TPI
+            if not hasattr(fp, "Thread_TPI_Nut_Custom"):
+                fp.addProperty("App::PropertyFloat", "Thread_TPI_Nut_Custom",
+                    "Parameters",
+                    translate("FastenerCmd",
+                        "Thread_TPI_Nut Custom value (supports decimals, e.g. 4.5)")
+                ).Thread_TPI_Nut_Custom = 0.0
+            _tpi_nut_sel = ""
+            try: _tpi_nut_sel = str(fp.Thread_TPI_Nut)
+            except Exception: pass
+            _cust_nut = (_tpi_nut_sel == "Custom")
+            fp.setEditorMode("Thread_TPI_Nut_Custom", 0 if _cust_nut else 2)
+            if not _cust_nut and _tpi_nut_sel:
+                try: fp.Thread_TPI_Nut_Custom = float(_tpi_nut_sel)
+                except (ValueError, TypeError): pass
 
             # Thread_Class_Nut_ASME
             _atpi_e = ""
@@ -1536,11 +1566,11 @@ class FSScrewObject(FSBaseObject):
             _nom     = _TA.bolt_nominal(fp.Diameter)
             _tt      = str(getattr(fp, "Thread_Type", "UNC") or "UNC")
             _tpi_sel = str(getattr(fp, "Thread_TPI",  "")   or "")
-            _cust    = int(getattr(fp, "Thread_TPI_Custom", 0)   or 0)
+            _cust    = float(getattr(fp, "Thread_TPI_Custom", 0)   or 0)
             _is_cust = (_tpi_sel == "Custom")
 
             _res_tpi = (_cust if _cust > 0 else 0) if _is_cust else \
-                       (int(_tpi_sel) if _tpi_sel and _tpi_sel != "Custom" else 0)
+                       (float(_tpi_sel) if _tpi_sel and _tpi_sel != "Custom" else 0)
 
             if _res_tpi > 0:
                 self.calc_tpi   = _res_tpi
@@ -1565,7 +1595,7 @@ class FSScrewObject(FSBaseObject):
                 try:
                     _cur = str(fp.Thread_TPI)
                     fp.Thread_TPI = _tpi_opts
-                    _cust_val = int(getattr(fp, "Thread_TPI_Custom", 0) or 0)
+                    _cust_val = float(getattr(fp, "Thread_TPI_Custom", 0) or 0)
                     if _cur == "Custom" and _cust_val == 0:
                         _first = next((x for x in _tpi_opts if x != "Custom"), None)
                         _restore = _first or "Custom"
@@ -1579,7 +1609,7 @@ class FSScrewObject(FSBaseObject):
                 try:
                     _tpi_now = str(fp.Thread_TPI)
                     if _tpi_now != "Custom" and hasattr(fp, "Thread_TPI_Custom"):
-                        fp.Thread_TPI_Custom = int(float(_tpi_now))
+                        fp.Thread_TPI_Custom = float(_tpi_now)
                 except Exception: pass
 
             if hasattr(fp, "Thread_Class"):
@@ -1825,7 +1855,7 @@ class FSScrewObject(FSBaseObject):
         # ── Store thread params for FsMake shape functions ────────────────
         self.Thread_Type   = str(fp.Thread_Type)   if (thread_on and hasattr(fp, "Thread_Type"))  else "UNC"
         self.Thread_TPI    = str(fp.Thread_TPI)    if hasattr(fp, "Thread_TPI")                   else ""
-        self.Thread_TPI_Custom = int(fp.Thread_TPI_Custom) if hasattr(fp, "Thread_TPI_Custom")    else 0
+        self.Thread_TPI_Custom = float(fp.Thread_TPI_Custom) if hasattr(fp, "Thread_TPI_Custom")  else 0.0
         self.Thread_Class  = str(fp.Thread_Class)  if (thread_on and hasattr(fp, "Thread_Class")) else "2A"
         self.ThreadSeries  = ""
         if not hasattr(self, "Thread_Pitch"): self.Thread_Pitch = ""

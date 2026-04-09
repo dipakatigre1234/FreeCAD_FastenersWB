@@ -41,51 +41,32 @@ def makeThreadedRod(self, fa):
     PARTIAL THREAD ROD  (Thread_Length = L  <  rod length)
     ═══════════════════════════════════════════════════════
     The rod has THREE sections — thread zone / plain shank / thread zone.
-    Each thread zone = L / 2.  Plain shank = rod_length - L.
+    Each thread zone = Thread_Length / 2.  Plain shank = rod_length - Thread_Length.
 
-        z=0     z=-half      z=-(L-half)   z=-L
-        ├── thread ─┤── shank ──┤── thread ──┤
+        z=0   z=−half  z=−(half+taper)     z=−(L−half−taper)  z=−(L−half)   z=−L
+        ├─thread─┤─taper─┤──────── shank ────────┤───taper───┤──thread──┤
 
-    Both thread zones start AND end smoothly:
-      • Outer end  : standard end-chamfer (body tapers to zero) at both rod tips
-      • Inner end  : conical taper (thread radius → shank radius) at shank junction
+    SMOOTH SHANK TRANSITION
+    ════════════════════════
+      rt = d_eff / 2   thread zone body radius  (= cutter OD, from threading module)
+      rs = dia   / 2   shank body radius        (user nominal, ≥ rt)
 
-    EQUAL THREADING — WHY CUTTERS EXTEND PAST THE SHANK JUNCTION
-    ══════════════════════════════════════════════════════════════
-    Every MakePipeShell helix has a lead-in (~1P shallow) at its START and
-    a lead-out (~1P shallow) at its END.
+    Body profile:
+      • Thread zones : flat cylinder at rt
+      • Taper zones  : conical ramp from rt → rs (top) / rs → rt (bottom)
+                       placed OUTSIDE the main thread zones
+      • Shank        : flat cylinder at rs
 
-    Without extension (old code with _extra=0):
-      Lead-OUT of top cutter  → lands at z=-half  (visible shank junction) ✗
-      Lead-IN  of bottom cutter → lands at z=-(L-half) (visible) ✗
-    Result: 1-2 turns near each shank end look narrower than the rest.
+    Smooth entry/exit at shank junctions:
+      Each cutter is extended by one pitch (taper) INTO the taper zone:
+        TOP cutter    : z = 0             →  z = −(half + taper)
+        BOTTOM cutter : z = −(L−half−taper) →  z = −L
 
-    Fix — extend each cutter by  extra = 2 × P  PAST the shank boundary:
-      TOP cutter   : oz = 0,                  tl = half + extra
-      BOTTOM cutter: oz = -(L - half - extra), tl = half + extra
-
-      Lead-out of TOP   → inside shank (z=−half … −(half+extra))    ✓ hidden
-      Lead-in  of BOTTOM → inside shank (z=−(L−half−extra) … −(L−half)) ✓ hidden
-
-    Every visible thread turn is now identical depth/width on both ends.
-
-    PROFILE GEOMETRY  (partial mode)
-    ══════════════════════════════════
-      cham  = P   axial width of end-chamfer
-      taper = P   axial width of thread→shank conical taper
-      rt = d_eff/2   thread body radius  (from threading module)
-      rs = dia/2     shank radius        (user nominal, ≥ rt)
-
-      (0,         0)           centre top
-      (rt-cham,   0)           top face outer edge
-      (rt,       -cham)        top end-chamfer complete
-      (rt,       -(half-taper)) thread straight ends
-      (rs,       -half)        TOP TAPER end → shank begins   [conical ramp]
-      (rs,       -(L-half))    shank ends
-      (rt,       -(L-half+taper)) BOTTOM TAPER end → thread resumes
-      (rt,       -(L-cham))    bottom thread straight ends
-      (rt-cham,  -L)           bottom end-chamfer complete
-      (0,        -L)           centre bottom
+      In the taper zone the body OD increases from rt toward rs.
+      Since the cutter OD = rt, it cuts LESS deeply where body > rt:
+        • At taper start (body = rt) : full-depth groove  ← matches thread zone
+        • At taper end   (body = rs) : near-zero groove   ← thread fades into shank
+      Result: smooth visual fade at both shank junctions, no flip needed.
     """
 
     ThreadType = fa.calc_diam
@@ -117,56 +98,54 @@ def makeThreadedRod(self, fa):
 
     # ── 3. Geometry constants ─────────────────────────────────────────────────
     cham   = P          # end-chamfer axial width  = 1 pitch
-    taper  = P          # thread→shank taper width = 1 pitch
-    #
-    # extra = 0: cutters cut EXACTLY half per end — no extra thread added.
-    # Smooth entry/exit at the shank junction is provided by the BODY PROFILE
-    # TAPER (conical ramp, rt → rs over 1 pitch).  The helix lead-in/out
-    # naturally coincides with the taper zone and fades gracefully there.
-    extra  = 0.0
+    taper  = P          # thread→shank taper width = 1 pitch (placed outside thread zone)
     length = fa.calc_len
 
     _raw_tl = getattr(fa, "calc_thread_length", 0.0) or 0.0
     _half   = float(_raw_tl) / 2.0
 
-    # Partial mode: thread_length set, < total length, and each half zone
-    # is long enough to hold  chamfer + straight + taper  (minimum = cham+taper)
+    # Partial mode requires:
+    #   • thread_length set and < total rod length
+    #   • each thread half-zone long enough for chamfer + some straight thread
+    #   • shank long enough for both tapers
     _partial = (
         _raw_tl > 0
         and _raw_tl < length
-        and _half > (cham + taper)
+        and _half > cham
+        and (length - _raw_tl) > 2 * taper
     )
 
-    _rt = d_eff / 2.0   # thread zone radius  (from threading module)
+    _rt = d_eff / 2.0   # thread zone radius  (= cutter OD from threading module)
     _rs = dia   / 2.0   # smooth shank radius (user nominal, >= _rt)
 
     # ── 4. Revolve profile ────────────────────────────────────────────────────
     fm = FSFaceMaker()
 
     fm.AddPoint(0.0,        0.0)
-    fm.AddPoint(_rt - cham, 0.0)        # top face outer edge
-    fm.AddPoint(_rt,       -cham)       # top end-chamfer done
+    fm.AddPoint(_rt - cham, 0.0)          # top face outer edge
+    fm.AddPoint(_rt,       -cham)         # top end-chamfer done
 
     if _partial:
-        # top thread straight (stays at thread radius up to taper start)
-        fm.AddPoint(_rt,   -(_half - taper))
+        # TOP thread zone: body flat at _rt (cutter OD matches body → full-depth thread)
+        fm.AddPoint(_rt,   -_half)
 
-        # conical taper: thread radius → shank radius  (smooth runout)
-        fm.AddPoint(_rs,   -_half)
+        # TOP taper: body expands rt→rs OUTSIDE the thread zone
+        fm.AddPoint(_rs,   -(_half + taper))
 
-        # smooth shank (straight cylinder at nominal diameter)
-        fm.AddPoint(_rs,   -(length - _half))
+        # smooth shank at nominal diameter
+        fm.AddPoint(_rs,   -(length - _half - taper))
 
-        # conical taper: shank radius → thread radius  (mirror of top)
-        fm.AddPoint(_rt,   -(length - _half + taper))
+        # BOTTOM taper: body contracts rs→rt OUTSIDE the thread zone (mirror of top)
+        fm.AddPoint(_rt,   -(length - _half))
 
-        # bottom thread straight
+        # BOTTOM thread zone: body flat at _rt
         fm.AddPoint(_rt,   -(length - cham))
+
     else:
-        # fully threaded: straight cylinder from end-chamfer to end-chamfer
+        # fully threaded: flat cylinder from end-chamfer to end-chamfer
         fm.AddPoint(_rt,   -(length - cham))
 
-    fm.AddPoint(_rt - cham, -length)    # bottom end-chamfer done
+    fm.AddPoint(_rt - cham, -length)      # bottom end-chamfer done
     fm.AddPoint(0.0,        -length)
 
     screw = self.RevolveZ(fm.GetFace())
@@ -176,24 +155,31 @@ def makeThreadedRod(self, fa):
 
         def _cut(shape, tl, oz):
             if is_asme:
-                return _TA.cut_thread(shape, fa, d_eff, tl, oz, P)
+                return _TA.cut_thread(shape, fa, dia, tl, oz, P)
             else:
-                return _TM.cut_thread(shape, fa, d_eff, tl, oz, P)
+                return _TM.cut_thread(shape, fa, dia, tl, oz, P)
 
         if not _partial:
-            # fully threaded — single cutter end to end
+            # fully threaded — single cutter, end to end
             screw = _cut(screw, length, 0.0)
-        else:
-            # TOP cutter
-            #   starts at z = 0  (rod face — lead-in invisible at chamfer)
-            #   ends   at z = -(half + extra)  — 2P inside smooth shank
-            #   lead-out lands inside shank, not at visible junction  ✓
-            screw = _cut(screw, _half + extra, 0.0)
 
-            # BOTTOM cutter
-            #   starts at z = -(length - half - extra) — 2P before shank junction
-            #   ends   at z = -length  (rod face — lead-out invisible at chamfer)
-            #   lead-in  lands inside shank, not at visible junction  ✓
-            screw = _cut(screw, _half + extra, -(length - _half - extra))
+        else:
+            # ── TOP cutter ────────────────────────────────────────────────────
+            # Covers thread zone + top taper zone:
+            #   z = 0  →  z = −(half + taper)
+            # At z=0:              body = rt, full-depth thread starts ✓
+            # At z=−half:          body = rt, still full-depth ✓
+            # At z=−(half+taper):  body = rs > rt → cutter cuts ~zero depth ✓
+            #                      → thread fades smoothly into shank surface ✓
+            screw = _cut(screw, _half + taper, 0.0)
+
+            # ── BOTTOM cutter ─────────────────────────────────────────────────
+            # Covers bottom taper zone + thread zone:
+            #   z = −(L−half−taper)  →  z = −L
+            # At z=−(L−half−taper):  body = rs > rt → cutter cuts ~zero depth ✓
+            #                         → thread fades smoothly up from shank ✓
+            # At z=−(L−half):        body = rt, full-depth thread ✓
+            # At z=−L:               rod face, end-chamfer hides the exit ✓
+            screw = _cut(screw, _half + taper, -(length - _half - taper))
 
     return screw

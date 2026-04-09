@@ -302,7 +302,7 @@ def thread_dia_limits_asme(nominal_mm, P_mm, cls,
 def resolve_thread_params(nominal, fa):
     thread_type = str(getattr(fa, "Thread_Type",       "UNC") or "UNC")
     tpi_sel     = str(getattr(fa, "Thread_TPI",        "")   or "")
-    cust_tpi    = int(getattr(fa, "Thread_TPI_Custom",  0)   or 0)
+    cust_tpi    = float(getattr(fa, "Thread_TPI_Custom",  0)   or 0)
     cls         = str(getattr(fa, "Thread_Class",      "2A") or "2A")
     calc_tpi    = getattr(fa, "calc_tpi",   None)
     calc_pitch  = getattr(fa, "calc_pitch", None)
@@ -317,12 +317,11 @@ def resolve_thread_params(nominal, fa):
         tpi = cust_tpi
     elif calc_tpi and calc_tpi > 0:
         # Already resolved by FastenersCmd execute() — use it
-        tpi = int(calc_tpi)
+        tpi = float(calc_tpi)
     elif tpi_sel and tpi_sel != "Custom":
         # Standard dropdown value — parse directly
         try:
             tpi = float(tpi_sel)
-            tpi = int(tpi) if tpi == int(tpi) else tpi
         except Exception:
             tpi = 0
     else:
@@ -452,7 +451,7 @@ def get_shank_dia(fa, dia_fallback):
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
+def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None, flip=False):
     """Cut ASME UN/UNR thread into shape.
 
     d_cutter comes from get_shank_dia() — same deviated value used for
@@ -507,4 +506,10 @@ def cut_thread(shape, fa, dia, tl, offset_z, P_mm=None):
     fa.calc_tpi = tpi
     tc = make_UN_thread_cutter(d_cutter, P_mm, tl, unr=is_unr)
     tc.translate(FreeCAD.Base.Vector(0, 0, offset_z))
+    if flip:
+        # Mirror cutter about the midpoint of its thread zone so the smooth
+        # lead-out end faces the shank junction instead of the rod face.
+        mid_z = offset_z - tl / 2.0
+        tc = tc.mirror(FreeCAD.Base.Vector(0, 0, mid_z),
+                       FreeCAD.Base.Vector(0, 0, 1))
     return shape.cut(tc)

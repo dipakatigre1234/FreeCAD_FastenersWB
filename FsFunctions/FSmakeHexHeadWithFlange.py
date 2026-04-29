@@ -28,8 +28,13 @@ def makeHexHeadWithFlange(self, fa):
     is_asme = SType.startswith("ASME")
 
     # ── 1. Unpack dimTable ────────────────────────────────────────────────
+    # EN1662/EN1665: P, b0, b1, b2, b3, c, dc, dw, e, k, kw, lf, r1, s_min, s_max (15 cols)
     if SType in ("EN1662", "EN1665"):
-        P_tbl, b0, b1, b2, b3, c, dc, dw, e, k, kw, f, r1, s = fa.dimTable
+        P_tbl, b0, b1, b2, b3, c, dc, dw, e, k, kw, f, r1, s_min, s_max = fa.dimTable
+        # Across flats — choose one:
+        # s = s_max                  # Type B (maximum material)
+        s = (s_max + s_min) / 2    # Mean (default)
+        # s = s_min                  # Type A (minimum material)
 
     elif SType == "ASMEB18.2.1.8":
         # CSV columns: b0, P, c, dc, kw, r1, s_max, s_min, e_max, e_min
@@ -125,9 +130,11 @@ def makeHexHeadWithFlange(self, fa):
     shape  = head.fuse(flange)
 
     # ── 7. THREADING: single call — all logic inside threading module ─────
+    # Thread must stop at the bottom of the fillet radius (z = -r1).
+    # Cap tl_cut so thread never extends into the fillet or head.
     if fa.Thread:
-        tl_cut   = b
-        offset_z = -(length - b)
+        tl_cut   = min(b, length - r1)   # stop at fillet bottom
+        offset_z = -(length - tl_cut)
         if is_asme:
             shape = _TA.cut_thread(shape, fa, d_eff, tl_cut, offset_z, P_tbl)
         else:

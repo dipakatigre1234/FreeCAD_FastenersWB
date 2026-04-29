@@ -5,7 +5,7 @@
 #
 #  A Wrapper to Ulrich's screw_maker macro
 #
-#  Copyright 2015 Shai Seger <shaise at gmail dot com>
+#  Copyright 2015 Shai Seger <shiais at gmail dot com>
 #  BSP modifications (c) 2025-2026 Andrey Bekhterev <info at bekhterev dot in>
 #
 ###############################################################################
@@ -341,12 +341,16 @@ screwTables = {
     "ASMEB18.6.1.5": ("Screw", "makeWoodScrew"),
     "ASMEB18.6.3.1A": ("Screw", "makeCountersunkHeadScrew"),
     "ASMEB18.6.3.1B": ("Screw", "makeCountersunkHeadScrew"),
+    "ASMEB18.6.3.1C": ("Screw", "makeCountersunkHeadScrew"),
     "ASMEB18.6.3.4A": ("Screw", "makeRaisedCountersunkScrew"),
     "ASMEB18.6.3.4B": ("Screw", "makeRaisedCountersunkScrew"),
+    "ASMEB18.6.3.4C": ("Screw", "makeRaisedCountersunkScrew"),
     "ASMEB18.6.3.9A": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.9B": ("Screw", "makePanHeadScrew"),
+    "ASMEB18.6.3.9C": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.10A": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.10B": ("Screw", "makePanHeadScrew"),
+    "ASMEB18.6.3.10C": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.12A": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.12C": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.16A": ("Screw", "makeRoundHeadScrew"),
@@ -412,9 +416,55 @@ screwTables = {
 FSAppendAliasesToTable(screwTables)
 
 
+def _unwrap_key(k):
+    """Unwrap single-element tuple keys that some CSV parsers produce.
+
+    Some ASME CSV files (e.g. ASMEB18.6.3.10C, ASMEB18.6.3.12C) are parsed
+    such that the first-column key becomes a 1-tuple like ('2',) instead of
+    the plain string '2'.
+    """
+    if isinstance(k, tuple):
+        return k[0] if len(k) == 1 else str(k)
+    return k
+
+
+def _normalize_fsdata_keys():
+    """Patch FsData in-place: convert ALL tuple keys to plain strings.
+
+    ROOT-CAUSE FIX: The screw_maker CSV parser produces 1-tuple keys like
+    ('2',) instead of '2' for ASMEB18.6.3.10C, ASMEB18.6.3.12C and
+    potentially other ASME types.  This corrupts EVERY sub-table that the
+    parser builds for those types — def, range, length, etc.
+
+    Fixing individual method call-sites (GetAllLengths, FindClosest, …) is
+    fragile because any new call-site will silently re-introduce the bug.
+    Instead we patch FsData once here at startup so the rest of the code
+    always sees plain-string keys.
+
+    Called from FSScrewMaker.__init__ so it runs exactly once after
+    screw_maker has finished populating FsData.
+    """
+    patched = 0
+    for table_name in list(FsData.keys()):
+        table = FsData[table_name]
+        if not isinstance(table, dict):
+            continue
+        if any(isinstance(k, tuple) for k in table):
+            FsData[table_name] = {_unwrap_key(k): v for k, v in table.items()}
+            patched += 1
+    if patched:
+        FreeCAD.Console.PrintLog(
+            f"[ScrewMaker] _normalize_fsdata_keys: patched {patched} table(s) "
+            f"with tuple keys\n"
+        )
+
+
 class FSScrewMaker(Screw):
     def __init__(self):
         super().__init__()
+        # Normalize any tuple keys produced by the CSV parser for ASME types.
+        # Must be called AFTER super().__init__() has finished populating FsData.
+        _normalize_fsdata_keys()
 
     def FindClosest(self, type, diam, len, width=None):
         """Find closest standard screw to given parameters"""
@@ -422,6 +472,8 @@ class FSScrewMaker(Screw):
             return diam, len, width
 
         diam_table = FsData[type + "def"]
+        diam = _unwrap_key(diam)   # safety net
+
         # auto find diameter
         if diam not in diam_table:
             origdia = FastenerBase.DiaStr2Num(diam)
@@ -544,8 +596,16 @@ class FSScrewMaker(Screw):
         return screwTables[type][FASTENER_FAMILY_POS]
 
     def GetAllDiams(self, type):
+        """Return all diameter keys for the given type.
+
+        FIX: Some ASME CSV files (e.g. ASMEB18.6.3.10C, ASMEB18.6.3.12C) are
+        parsed such that the first-column key becomes a 1-tuple like ('2',)
+        instead of the plain string '2'.  Unwrap those here so the rest of the
+        code always receives plain strings.
+        """
         type = FSGetTypeAlias(type)
-        return list(FsData[type + "def"].keys())
+        keys = list(FsData[type + "def"].keys())
+        return [_unwrap_key(k) for k in keys]
 
     def GetAllTcodes(self, type, diam):
         FSGetTypeAlias(type)
@@ -583,8 +643,17 @@ class FSScrewMaker(Screw):
         return list(widths)
 
     def GetAllLengths(self, type, diam, addCustom=True, width=None):
+        """Return all valid lengths for the given type and diameter.
+
+        FsData is already normalized (all tuple keys → plain strings) by
+        _normalize_fsdata_keys() which runs in __init__, so plain dict
+        lookups are safe here.  We still unwrap `diam` as a last-resort
+        guard in case a tuple slips in from an unexpected call-site.
+        """
         lenlist = []
         type = FSGetTypeAlias(type)
+        diam = _unwrap_key(diam)   # safety net only
+
         rangeTableName = type + "range"
         if diam != "Auto":
             if width is not None:
@@ -595,13 +664,13 @@ class FSScrewMaker(Screw):
                     lens = rangeTable["all"]
                 else:
                     lens = FsData[type + "length"]
-                range = rangeTable[diam]
-                min = FastenerBase.LenStr2Num(range[0])
-                max = FastenerBase.LenStr2Num(range[1])
-                for len in lens:
-                    l = FastenerBase.LenStr2Num(len)
-                    if l >= min and l <= max:
-                        lenlist.append(len)
+                range_entry = rangeTable[diam]
+                lo = FastenerBase.LenStr2Num(range_entry[0])
+                hi = FastenerBase.LenStr2Num(range_entry[1])
+                for ln in lens:
+                    l = FastenerBase.LenStr2Num(ln)
+                    if lo <= l <= hi:
+                        lenlist.append(ln)
             else:
                 lens = FsData[type + "length"]
                 lenlist = list(lens[diam])
@@ -615,14 +684,16 @@ class FSScrewMaker(Screw):
         if name not in titles:
             return -1
         return titles.index(name)
+
     def GetTableProperty(self, type, diam, property, default_val):
         tablepos = self.GetTablePos(type, property)
         FreeCAD.Console.PrintLog("Found pos for " + property + ": " + str(tablepos) + "\n")
         if (tablepos < 0):
             return default_val
         table = FsData[type + "def"]
+        diam  = _unwrap_key(diam)   # safety net
         FreeCAD.Console.PrintLog("Fetching value for diam: " + diam + "\n")
-        return table[diam][tablepos]        
+        return table[diam][tablepos]
 
     def GetThreadLength(self, type, diam):
         return self.GetTableProperty(type, diam, 'thr_len', 10.0)
@@ -651,7 +722,8 @@ class FSScrewMaker(Screw):
         kpos = self.GetTablePos(type, 'csh_height')
         if kpos < 0:
             return None
-        table = FsData[type + "def"]
+        raw_table = FsData[type + "def"]
+        table = {_unwrap_key(k): v for k, v in raw_table.items()}
         res = {}
         for diam in table:
             res[diam] = (table[diam][dpos], table[diam][kpos])

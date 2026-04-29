@@ -53,8 +53,8 @@ _CSV_DIR       = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "Fs
 _CSV_ASME_NUT  = _os.path.join(_CSV_DIR, "un_unr_internal_thread_minor_dia.csv")
 
 # ── Bore deviation constants ──────────────────────────────────────────────────
-BORE_DEVIATION_PCT_SMALL = 1.0
-BORE_DEVIATION_PCT_LARGE = 0.3
+BORE_DEVIATION_PCT_SMALL = 0.0
+BORE_DEVIATION_PCT_LARGE = 0.0
 
 
 # ── Inch string → mm conversion ───────────────────────────────────────────────

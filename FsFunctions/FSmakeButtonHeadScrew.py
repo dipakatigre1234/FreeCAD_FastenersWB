@@ -54,9 +54,37 @@ def makeButtonHeadScrew(self, fa):
 
     # ── Unpack dimTable ───────────────────────────────────────────────────
     if SType == 'ISO7380-1':
-        P_tbl, b_tbl, a, da, dk, dk_mean, s_mean, t_min, r, k, e, w = fa.dimTable
+        # CSV cols: P, b, da, dk_max, dk_min, d_l, d_s_max, d_s_min, d_w, e,
+        #           k_max, k_min, r_f_max, r_f_min, r_s, r_t,
+        #           s_nom, s_max, s_min, t_max, t_min, w_b  (22 cols)
+        (P_tbl, b_tbl,
+         da, dk_max, dk_min,
+         d_l, d_s_max, d_s_min, d_w,
+         e,
+         k_max, k_min,
+         r_f_max, r_f_min,
+         r_s, r_t,
+         s_nom, s_max, s_min,
+         t_max, t_min,
+         w_b) = fa.dimTable
+        # Mean values (default)
+        dk     = (dk_max  + dk_min)  / 2
+        k      = (k_max   + k_min)   / 2
+        r      = r_s                       # shank-to-head fillet (small radius)
+        s_mean = s_nom
+        t_min  = (t_max   + t_min)   / 2
+
     elif SType == 'ASMEB18.3.3A':
-        P_tbl, b_tbl, da, dk, s_mean, t_min, r, k = fa.dimTable
+        # CSV cols: P, b, da, dk_max, dk_min, s, t, r, k_max, k_min  (10 cols)
+        (P_tbl, b_tbl,
+         da, dk_max, dk_min,
+         s_mean, t_min,
+         r,
+         k_max, k_min) = fa.dimTable
+        # Mean values (default)
+        dk = (dk_max + dk_min) / 2
+        k  = (k_max  + k_min)  / 2
+
     else:
         raise NotImplementedError(f"Unknown fastener type: {SType}")
 
@@ -75,13 +103,12 @@ def makeButtonHeadScrew(self, fa):
     tr         = d_eff / 2.0
 
     FreeCAD.Console.PrintMessage(
-        f"[Dipak] Threading: dia={dia:.4f}mm, "
-        f"thread_dia={thread_dia:.4f}mm, {log_extra}, "
-        f"allowance={dia - thread_dia:.4f}mm, "
-        f"thread_length={b:.2f}mm\n"
+        f"[ButtonHead] dia={dia:.4f}mm  d_eff={d_eff:.4f}mm  "
+        f"P={P:.4f}mm  thread_length={b:.2f}mm\n"
     )
 
     # ── Head geometry ─────────────────────────────────────────────────────
+    # dk, k, r, s_mean are all mean values computed above
     e_cham = 2.0 * s_mean / sqrt3 * 1.005
     ak     = -(4 * k ** 2 + e_cham ** 2 - dk ** 2) / (8 * k)
     rH     = math.sqrt((dk / 2.0) ** 2 + ak ** 2)

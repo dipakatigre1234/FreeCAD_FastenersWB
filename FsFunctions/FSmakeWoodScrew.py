@@ -45,7 +45,19 @@ def makeWoodScrew(self, fa): # dynamically loaded method of class Screw
 def makeDIN571(screw_obj, fa):
     l = fa.calc_len
     dia = float(fa.calc_diam.split()[0])
-    ds, da, d3, k, s, P = fa.dimTable
+    # CSV: ds, da, d3, k_min, k_max, s_min, s_max, P
+    ds, da, d3, k_min, k_max, s_min, s_max, P = fa.dimTable
+
+    # Head height — choose one:
+    # k = k_max                  # Type B (maximum material)
+    k = (k_max + k_min) / 2    # Mean (default)
+    # k = k_min                  # Type A (minimum material)
+
+    # Across flats — choose one:
+    # s = s_max                  # Type B (maximum material)
+    s = (s_max + s_min) / 2    # Mean (default)
+    # s = s_min                  # Type A (minimum material)
+
     d = dia / 2.0
     d3h = d3 / 2.0
     r = (da - ds) / 2.0

@@ -49,7 +49,29 @@ def makeFlangedSquareHeadBolt(self, fa):
 
     # ── Unpack dimTable ───────────────────────────────────────────────────
     if fa.baseType == "DIN478":
-        P_tbl, b1, b2, c, da, dc, e, k, r, s = fa.dimTable
+        # CSV: P, b1, b2, c_min, c_max, da, dc, e_min, e_max, k_min, k_max, r, s_min, s_max
+        P_tbl, b1, b2, c_min, c_max, da, dc, e_min, e_max, k_min, k_max, r, s_min, s_max = fa.dimTable
+
+        # Collar height — choose one:
+        # c = c_max                  # Type B (maximum material)
+        c = (c_max + c_min) / 2    # Mean (default)
+        # c = c_min                  # Type A (minimum material)
+
+        # Across corners (chamfer geometry) — choose one:
+        # e = e_max                  # Type B (maximum material)
+        e = (e_max + e_min) / 2    # Mean (default)
+        # e = e_min                  # Type A (minimum material)
+
+        # Head height — choose one:
+        # k = k_max                  # Type B (maximum material)
+        k = (k_max + k_min) / 2    # Mean (default)
+        # k = k_min                  # Type A (minimum material)
+
+        # Across flats (square side) — choose one:
+        # s = s_max                  # Type B (maximum material)
+        s = (s_max + s_min) / 2    # Mean (default)
+        # s = s_min                  # Type A (minimum material)
+
         b_tbl = b1 if length < 125 else b2
     else:
         raise NotImplementedError(f"Unknown fastener type: {fa.baseType}")
@@ -73,9 +95,15 @@ def makeFlangedSquareHeadBolt(self, fa):
     FreeCAD.Console.PrintMessage(
         f"[FlangedSquareBolt] dia={dia:.4f}mm  d_eff={d_eff:.4f}mm  "
         f"P={P:.4f}mm  thread_length={b:.2f}mm\n"
+        f"  c={c:.3f}mm (c_min={c_min:.3f} c_max={c_max:.3f})\n"
+        f"  e={e:.3f}mm (e_min={e_min:.3f} e_max={e_max:.3f})\n"
+        f"  k={k:.3f}mm (k_min={k_min:.3f} k_max={k_max:.3f})\n"
+        f"  s={s:.3f}mm (s_min={s_min:.3f} s_max={s_max:.3f})\n"
     )
 
-    # ── Square head revolve (unchanged — uses s/e geometry, not dia) ──────
+    # ── Square head revolve ───────────────────────────────────────────────
+    # Head profile: flat top at k, chamfered corners using e (across corners)
+    # The 30° chamfer angle is standard for DIN square heads.
     fm = FSFaceMaker()
     fm.AddPoint(0.0,   k)
     fm.AddPoint(s / 2, k)
@@ -87,6 +115,7 @@ def makeFlangedSquareHeadBolt(self, fa):
     head_square  = head_revolve.common(head_square)
 
     # ── Collar + shaft revolve ────────────────────────────────────────────
+    # c  = collar height, dc = collar outer diameter
     # Arc ends at (dia/2, -r); step inward to tr at same z so the entire
     # shaft is at thread_dia → volume changes correctly.
     fm.Reset()

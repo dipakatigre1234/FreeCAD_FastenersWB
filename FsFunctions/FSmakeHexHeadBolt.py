@@ -32,29 +32,61 @@ def makeHexHeadBolt(self, fa):
     is_asme = fa.baseType.startswith("ASME")
 
     # ── 1. Unpack dimTable ────────────────────────────────────────────────
-    if fa.baseType in ("DIN933", "DIN961", "ISO4017", "ISO8676"):
-        P_tbl, c, dw, e, k, r, s = fa.dimTable
+
+    # DIN933/DIN961: P, c_min, c_max, da, dw, e, k_min, k_max, r, s_min, s_max (11 cols)
+    if fa.baseType in ("DIN933", "DIN961"):
+        P_tbl, c_min, c_max, da, dw, e, k_min, k_max, r, s_min, s_max = fa.dimTable
+        c = (c_max + c_min) / 2    # Mean
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
         b_tbl = length
 
+    # ISO4017: P, a_max, a_min, c_min, c_max, da, dw, e, k_min, k_max, k_w, r, s_min, s_max (14 cols)
+    elif fa.baseType == "ISO4017":
+        P_tbl, a_max, a_min, c_min, c_max, da, dw, e, k_min, k_max, k_w, r, s_min, s_max = fa.dimTable
+        c = (c_max + c_min) / 2    # Mean
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
+        b_tbl = length
+
+    # ISO8676: P, c_max, c_min, dw, e, k_max, k_min, r, s_max, s_min (10 cols)
+    elif fa.baseType == "ISO8676":
+        P_tbl, c_max, c_min, dw, e, k_max, k_min, r, s_max, s_min = fa.dimTable
+        c = (c_max + c_min) / 2    # Mean
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
+        b_tbl = length
+
+    # ISO4018: P, a_max, a_min, c, d_a, d_w, e, k_nom, k_max, k_min, k_w, r, s_nom_max, s_min (14 cols)
     elif fa.baseType == "ISO4018":
-        P_tbl, _, _, c, _, dw, e, k, _, _, _, r, s, _ = fa.dimTable
+        P_tbl, a_max, a_min, c, d_a, dw, e, k_nom, k_max, k_min, k_w, r, s_max, s_min = fa.dimTable
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
         b_tbl = length
 
+    # ISO4014: P, b1, b2, b3, c_min, c_max, dw, e, k_min, k_max, r, s_min, s_max (13 cols)
     elif fa.baseType == "ISO4014":
-        P_tbl, b1, b2, b3, c, dw, e, k, r, s = fa.dimTable
+        P_tbl, b1, b2, b3, c_min, c_max, dw, e, k_min, k_max, r, s_min, s_max = fa.dimTable
+        c = (c_max + c_min) / 2    # Mean
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
         b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
 
+    # ISO4016: P, b_1, b_2, b_3, c, d_a, d_s_max, d_s_min, d_w, e, k_nom, k_max, k_w, k_min, r, s_nom_max, s_min (17 cols)
     elif fa.baseType == "ISO4016":
-        P_tbl, b1, b2, b3, c, _, _, _, dw, e, k, _, _, _, r, s, _ = fa.dimTable
+        P_tbl, b1, b2, b3, c, d_a, d_s_max, d_s_min, dw, e, k_nom, k_max, k_w, k_min, r, s_max, s_min = fa.dimTable
+        k = (k_max + k_min) / 2    # Mean
+        s = (s_max + s_min) / 2    # Mean
         b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
 
     elif fa.baseType == "ISO8765":
-        P_tbl, b1, b2, b3, c = fa.dimTable[:5]
-        dw = fa.dimTable[11]
-        e  = fa.dimTable[13]
-        k  = fa.dimTable[15]
-        r  = fa.dimTable[22]
-        s  = fa.dimTable[23]
+        # CSV cols: P, b_1, b_2, b_3, c_max, c_min, d_a, d_s_max, d_s_min,
+        #           d_w, e, k_max, k_min, k_w, l_f, r, s_max, s_min  (18 cols)
+        P_tbl, b1, b2, b3, c_max, c_min, da, ds_max, ds_min, dw, e, k_max, k_min, kw, lf, r, s_max, s_min = fa.dimTable
+        # Mean values (default)
+        c = (c_max + c_min) / 2
+        k = (k_max + k_min) / 2
+        s = (s_max + s_min) / 2
         b_tbl = b1 if length <= 125.0 else (b2 if length <= 200.0 else b3)
 
     elif fa.baseType in ("ASMEB18.2.1.2", "ASMEB18.2.1.3"):

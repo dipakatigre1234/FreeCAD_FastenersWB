@@ -54,7 +54,33 @@ def makeFlangedButtonHeadScrew(self, fa):
 
     # ── Unpack dimTable ───────────────────────────────────────────────────
     if SType == 'ISO7380-2':
-        P_tbl, b_tbl, c, da, dk, dk_c, s_mean, t_min, r, k, e, w = fa.dimTable
+        # CSV cols: P, b, c_max, c_min, da, dc_max, dc_min, dk_max, dk_min,
+        #           d_l, dsb_max, dsb_min, dwc, e, k_max, k_min, rf_max, rf_min,
+        #           s, rt, sd_nom, sd_max, sd_min, t_max, t_min, wb  (26 cols)
+        (P_tbl, b_tbl,
+         c_max, c_min,
+         da,
+         dc_max, dc_min,
+         dk_max, dk_min,
+         d_l, dsb_max, dsb_min, dwc,
+         e,
+         k_max, k_min,
+         rf_max, rf_min,
+         s_fillet, rt,
+         sd_nom, sd_max, sd_min,
+         t_max, t_min,
+         wb) = fa.dimTable
+
+        # Mean values (default)
+        c      = (c_max  + c_min)  / 2       # collar height
+        dk_c   = (dc_max + dc_min) / 2       # collar outer dia
+        dk     = (dk_max + dk_min) / 2       # head dia
+        k      = (k_max  + k_min)  / 2       # head height
+        r      = s_fillet                     # shank fillet radius (small, 0.10–0.25mm)
+        s_mean = (sd_max + sd_min) / 2       # hex socket drive size (mean)
+        t_min  = (t_max  + t_min)  / 2       # socket depth (mean)
+        w      = wb
+
     elif SType == 'ASMEB18.3.3B':
         P_tbl, b_tbl, c, dk, dk_c, s_mean, t_min, r, k = fa.dimTable
     else:
@@ -75,10 +101,8 @@ def makeFlangedButtonHeadScrew(self, fa):
     tr         = d_eff / 2.0
 
     FreeCAD.Console.PrintMessage(
-        f"[Dipak] Threading: dia={dia:.4f}mm, "
-        f"thread_dia={thread_dia:.4f}mm, {log_extra}, "
-        f"allowance={dia - thread_dia:.4f}mm, "
-        f"thread_length={b:.2f}mm\n"
+        f"[FlangedButton] dia={dia:.4f}mm  d_eff={d_eff:.4f}mm  "
+        f"P={P:.4f}mm  thread_length={b:.2f}mm\n"
     )
 
     # ── Head geometry ─────────────────────────────────────────────────────

@@ -49,9 +49,18 @@ def makeSquareBolt(self, fa):
     if fa.baseType == "ASMEB18.2.1.1":
         # CSV columns: TPI, F_max, F_min, H_max, H_min, R, L_T1, L_T2 (all in inches)
         TPI_tbl, F_max, F_min, H_max, H_min, R, L_T1, L_T2 = fa.dimTable
-        r     = R                          * 25.4
-        s     = ((F_max + F_min) / 2)     * 25.4
-        k     = ((H_max + H_min) / 2)     * 25.4
+        r     = R * 25.4
+
+        # Across flats (square side) — choose one:
+        # s = F_max * 25.4               # Type B (maximum material)
+        s = ((F_max + F_min) / 2) * 25.4  # Mean (default)
+        # s = F_min * 25.4               # Type A (minimum material)
+
+        # Head height — choose one:
+        # k = H_max * 25.4               # Type B (maximum material)
+        k = ((H_max + H_min) / 2) * 25.4  # Mean (default)
+        # k = H_min * 25.4               # Type A (minimum material)
+
         P_tbl = 25.4 / TPI_tbl
         b_tbl = (L_T1 if length <= 6 * 25.4 else L_T2) * 25.4
     else:
@@ -111,14 +120,9 @@ def makeSquareBolt(self, fa):
     head_square = Part.makeBox(s, s, 2 * k + length)
     head_square.translate(Base.Vector(-s / 2, -s / 2, -length - k))
     shape = shape.common(head_square)
-    
-     # ── Thread cutter ─────────────────────────────────────────────────────
-    is_asme = fa.baseType.startswith("ASME")
-    d_eff   = thread_dia   # Dipak-formula diameter, consistent with body profile
 
     # ── Thread cutter ─────────────────────────────────────────────────────
     # is_asme and d_eff already set above (before body profile)
-
     if fa.Thread:
 
         tl_cut   = thread_length

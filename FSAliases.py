@@ -8,16 +8,7 @@
 
 # a table to reuse icons:
 FSIconAliases = {
-    'ASMEB18.2.2.3'  : 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.5A' : 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.5B' : 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.11A': 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.11B': 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.6'  : 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.8'  : 'ASMEB18.2.2.1A',
-    'ASMEB18.2.2.13A': 'EN1661',
-    'ASMEB18.2.2.13B': 'EN1661',
-    'ASMEB18.2.2.14' : 'ASMEB18.2.2.1A',
+    
     'DIN1160-A': 'DIN1151-A',
     'DIN1160-B': 'DIN1151-A',
     'DIN84' : 'ISO1207',

@@ -34,6 +34,54 @@ if _wb_t not in _sys_t.path:
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
+# ── Security pin helpers ──────────────────────────────────────────────────────
+_TORX_PIN_DIA_MM = {
+    "T6":  0.56, "T7":  0.56, "T8":  0.68, "T9":  0.68, "T10": 0.84,
+    "T15": 1.12, "T20": 1.40, "T25": 1.68, "T27": 1.68, "T30": 2.10,
+    "T40": 2.80, "T45": 3.36, "T50": 4.20,
+}
+_TORX_CHAMFER_H = 0.10
+
+def _fs_float(v):
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, (list, tuple)):
+        return _fs_float(v[0])
+    digits = ''.join(c for c in str(v).strip() if c.isdigit() or c == '.')
+    return float(digits) if digits else 0.0
+
+def _torx_size_str(tt):
+    s = str(tt).strip().upper()
+    return s if s.startswith("T") else "T" + s
+
+def _make_security_pin_cylinder(tt, z_base, z_top):
+    """Create a security (tamper-resistant) centre pin solid.
+    z_base : bottom of pin (extended below head base for robust fuse)
+    z_top  : tip of pin (flush with head top surface)
+    """
+    ANCHOR_EXTRA = 2.0
+    torx_key = _torx_size_str(tt)
+    pin_r    = _TORX_PIN_DIA_MM.get(torx_key, None)
+    total_h  = (z_top - z_base) + ANCHOR_EXTRA
+    if pin_r is None:
+        pin_r = min(total_h * 0.20, 2.0)
+    else:
+        pin_r = pin_r / 2.0
+    chamfer_h   = _TORX_CHAMFER_H
+    chamfer_r   = chamfer_h
+    body_h      = total_h - chamfer_h
+    actual_base = z_base - ANCHOR_EXTRA
+    body = Part.makeCylinder(pin_r, body_h,
+               FreeCAD.Vector(0.0, 0.0, actual_base), FreeCAD.Vector(0.0, 0.0, 1.0))
+    cone = Part.makeCone(pin_r, max(pin_r - chamfer_r, pin_r * 0.1), chamfer_h,
+               FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h), FreeCAD.Vector(0.0, 0.0, 1.0))
+    try:
+        return body.fuse(cone)
+    except Exception:
+        return body
+
+
+
 
 
 
@@ -49,6 +97,7 @@ def makeCheeseHeadScrew(self, fa):
     length  = fa.calc_len
     dia     = self.getDia(fa.calc_diam, False)
     is_asme = SType.startswith("ASME")
+    security_pin_solid = None
     if SType == "ISO1207" or SType == "DIN84":
         P, a, b, dk, dk_mean, da, k, n_min, r, t_min, x = fa.dimTable
         r_fil = r * 2.0
@@ -62,14 +111,36 @@ def makeCheeseHeadScrew(self, fa):
         r_fil = rf
         recess = self.makeSlotRecess(n_min, t_min, dk)
     elif SType == "ISO14580":
-        P, a, b, dk, dk_mean, da, k, n_min, r, t_min, x = fa.dimTable
-        tt, k, A, t_min = FsData["ISO14580extra"][fa.calc_diam]
+        # CSV cols: P, a_max, b_min, dk_max, dk_min, da_max, k_max, k_min,
+        #           r_min, w_min, x_max, socket_no, A_ref, t_max, t_min  (15 cols)
+        (P, a, b,
+         dk_max, dk_min,
+         da,
+         k_max, k_min,
+         r, w_min, x_max,
+         socket_no, A_ref,
+         t_max, t_min) = fa.dimTable
+        # Mean values (default)
+        dk    = (dk_max + dk_min) / 2
+        k     = (k_max  + k_min)  / 2
+        tt    = _torx_size_str(int(socket_no))
+        t_min = (t_max  + t_min)  / 2
         r_fil = r * 2.0
         recess = self.makeHexalobularRecess(tt, t_min, True)
+        if getattr(fa, "SecurityPin", True):
+            security_pin_solid = _make_security_pin_cylinder(tt, 0.0, _fs_float(k))
+    # ── Pitch override (Thread_Pitch / TPI from dashboard) ───────────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    P = float(raw_pitch) if (raw_pitch is not None and float(raw_pitch) > 0.0) else P
+
+    # ── Thread length override (Thread_Length from dashboard) ─────────────
+    raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
+    if raw_tlen > 0.0:
+        b = min(float(raw_tlen), length)
+
     # ── Effective shank diameter from threading module ────────────────────
-    raw_pitch  = getattr(fa, "calc_pitch", None)
-    d_eff      = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
-    tr         = d_eff / 2.0
+    d_eff = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+    tr    = d_eff / 2.0
 
     head_taper_angle = math.radians(5)
     # lay out the fastener profile
@@ -98,6 +169,17 @@ def makeCheeseHeadScrew(self, fa):
     # cut the driving feature, then add modelled threads if needed
     recess.translate(Base.Vector(0.0, 0.0, k))
     screw = screw.cut(recess)
+    if security_pin_solid is not None:
+        try:
+            fused = screw.fuse(security_pin_solid)
+            if fused.isValid():
+                screw = fused
+            else:
+                screw = Part.makeCompound([screw, security_pin_solid])
+        except Exception as _pin_err:
+            FreeCAD.Console.PrintWarning(
+                f"[SecurityPin] fuse failed ({_pin_err}), using compound\n")
+            screw = Part.makeCompound([screw, security_pin_solid])
     if fa.Thread:
         tl_cut   = thread_length
         offset_z = -(length - thread_length)

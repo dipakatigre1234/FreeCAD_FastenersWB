@@ -34,6 +34,54 @@ if _wb_t not in _sys_t.path:
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
+# ── Security pin helpers ──────────────────────────────────────────────────────
+_TORX_PIN_DIA_MM = {
+    "T6":  0.56, "T7":  0.56, "T8":  0.68, "T9":  0.68, "T10": 0.84,
+    "T15": 1.12, "T20": 1.40, "T25": 1.68, "T27": 1.68, "T30": 2.10,
+    "T40": 2.80, "T45": 3.36, "T50": 4.20,
+}
+_TORX_CHAMFER_H = 0.10
+
+def _fs_float(v):
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, (list, tuple)):
+        return _fs_float(v[0])
+    digits = ''.join(c for c in str(v).strip() if c.isdigit() or c == '.')
+    return float(digits) if digits else 0.0
+
+def _torx_size_str(tt):
+    s = str(tt).strip().upper()
+    return s if s.startswith("T") else "T" + s
+
+def _make_security_pin_cylinder(tt, z_base, z_top):
+    """Create a security (tamper-resistant) centre pin solid.
+    z_base : bottom of pin; extended further down by ANCHOR_EXTRA for robust fuse.
+    z_top  : tip of pin (flush with head top surface, which is z=0 for countersunk).
+    """
+    ANCHOR_EXTRA = 2.0
+    torx_key = _torx_size_str(tt)
+    pin_r    = _TORX_PIN_DIA_MM.get(torx_key, None)
+    total_h  = (z_top - z_base) + ANCHOR_EXTRA
+    if pin_r is None:
+        pin_r = min(total_h * 0.20, 2.0)
+    else:
+        pin_r = pin_r / 2.0
+    chamfer_h   = _TORX_CHAMFER_H
+    chamfer_r   = chamfer_h
+    body_h      = total_h - chamfer_h
+    actual_base = z_base - ANCHOR_EXTRA
+    body = Part.makeCylinder(pin_r, body_h,
+               FreeCAD.Vector(0.0, 0.0, actual_base), FreeCAD.Vector(0.0, 0.0, 1.0))
+    cone = Part.makeCone(pin_r, max(pin_r - chamfer_r, pin_r * 0.1), chamfer_h,
+               FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h), FreeCAD.Vector(0.0, 0.0, 1.0))
+    try:
+        return body.fuse(cone)
+    except Exception:
+        return body
+
+
+
 from FastenerBase import FSFaceMaker
 import math
 
@@ -59,6 +107,7 @@ def makeCountersunkHeadScrew(self, fa):
     length  = fa.calc_len
     dia     = self.getDia(fa.calc_diam, False)
     is_asme = SType.startswith("ASME")
+    security_pin_solid = None
 
     # ── Unpack dimTable ───────────────────────────────────────────────────
     if SType == "ISO10642":
@@ -92,6 +141,20 @@ def makeCountersunkHeadScrew(self, fa):
         cT, mH = FsData["ASMEB18.6.3.1Bextra"][fa.calc_diam]
         recess = self.makeHCrossRecess(cT, mH * 25.4)
 
+    elif SType == "ASMEB18.6.3.1C":
+        # CSV cols: P, b, dk_theo, dk_mean, k, socket_no, recess_dia_ref, p_max, p_min  (9 cols)
+        # NOTE: all numeric values are already stored in mm (same convention as 1A/1B)
+        csk_angle = math.radians(82)
+        P_tbl, b_tbl, dk_theo, dk_mean, k_val, socket_no, recess_dia_ref, p_max, p_min = fa.dimTable
+        r = 0.25     # ASME doesn't spec a radius; assume 0.25 mm
+        t_mean = (p_max + p_min) / 2   # recess depth in mm
+        tt = _torx_size_str(socket_no) # already 'T5', 'T6', etc.
+        chamfer_end = False
+        recess = self.makeHexalobularRecess(tt, t_mean, False)
+        if getattr(fa, "SecurityPin", False):
+            # countersunk: z=0 is head top, z=-k_val is head bottom (all in mm)
+            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k_val), 0.0)
+
     elif SType == "ISO7046":
         csk_angle = math.radians(90)
         P_tbl, _, b_tbl, dk_theo, dk_mean, _, n_min, r, t_mean, _ = fa.dimTable
@@ -100,16 +163,53 @@ def makeCountersunkHeadScrew(self, fa):
         recess = self.makeHCrossRecess(cT, mH)
 
     elif SType == "ISO14581":
+        # CSV cols: P, a_max, b, dk_theo, dk_max, dk_min, ds, k_max, k_min,
+        #           r_max, r_min, x_max, socket_no, A_ref, t_max, t_min  (16 cols)
         csk_angle = math.radians(90)
-        P_tbl, a, b_tbl, dk_theo, dk_mean, k, r, tt, A, t_mean = fa.dimTable
+        (P_tbl, a, b_tbl,
+         dk_theo, dk_max, dk_min,
+         ds,
+         k_max, k_min,
+         r_max, r_min,
+         x_max,
+         socket_no, A_ref,
+         t_max, t_min) = fa.dimTable
+        # Mean values (default)
+        dk_mean = (dk_max + dk_min) / 2
+        k       = (k_max  + k_min)  / 2
+        r       = (r_max  + r_min)  / 2
+        tt      = _torx_size_str(int(socket_no))
+        t_mean  = (t_max  + t_min)  / 2
         chamfer_end = True
         recess = self.makeHexalobularRecess(tt, t_mean, False)
+        if getattr(fa, "SecurityPin", False):
+            # countersunk: z=0 is head top, z=-k is head bottom
+            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0)
 
     elif SType == "ISO14582":
+        # CSV cols: P, a_max, b, dk_theo, dk_max, dk_min, ds_max, ds_min,
+        #           dg_max, dg_min, rc_max, k_max, r_min, socket_no, A_ref,
+        #           t_max, t_min  (17 cols)
         csk_angle = math.radians(90)
-        P_tbl, _, b_tbl, dk_theo, dk_mean, _, r, tt, _, t_mean = fa.dimTable
+        (P_tbl, _, b_tbl,
+         dk_theo, dk_max, dk_min,
+         ds_max, ds_min,
+         dg_max, dg_min,
+         rc_max,
+         k_max,
+         r_min,
+         socket_no, A_ref,
+         t_max, t_min) = fa.dimTable
+        # Mean values (default)
+        dk_mean = (dk_max + dk_min) / 2
+        r       = r_min
+        tt      = _torx_size_str(int(socket_no))
+        t_mean  = (t_max  + t_min)  / 2
+        k       = k_max   # ISO14582 only has k_max
         chamfer_end = True
         recess = self.makeHexalobularRecess(tt, t_mean, False)
+        if getattr(fa, "SecurityPin", False):
+            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0)
 
     else:
         raise NotImplementedError(f"Unknown fastener type: {SType}")
@@ -167,6 +267,17 @@ def makeCountersunkHeadScrew(self, fa):
 
     shape = self.RevolveZ(fm.GetFace())
     shape = shape.cut(recess)
+    if security_pin_solid is not None:
+        try:
+            fused = shape.fuse(security_pin_solid)
+            if fused.isValid():
+                shape = fused
+            else:
+                shape = Part.makeCompound([shape, security_pin_solid])
+        except Exception as _pin_err:
+            FreeCAD.Console.PrintWarning(
+                f"[SecurityPin] fuse failed ({_pin_err}), using compound\n")
+            shape = Part.makeCompound([shape, security_pin_solid])
 
     # ── Thread cutter ─────────────────────────────────────────────────────
     if fa.Thread:

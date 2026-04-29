@@ -52,16 +52,23 @@ def makeRoundHeadScrew(self, fa):
 
     # ── Unpack dimTable per screw type ────────────────────────────────────
     if SType == "ASMEB18.6.3.16A":
-        P_tbl, A, H, J, T = fa.dimTable
-        A, H, J, T = (25.4 * x for x in (A, H, J, T))
+        # CSV cols (inches): P, A_max, A_min, O_max, O_min, F_max, F_min, J_max, J_min, T_max, T_min, U_max, U_min, X_max, X_min
+        P_tbl, A_max, A_min, O_max, O_min, F_max, F_min, J_max, J_min, T_max, T_min, U_max, U_min, X_max, X_min = fa.dimTable
+        A  = (A_max + A_min) / 2 * 25.4
+        H  = (O_max + O_min) / 2 * 25.4   # O = overall height
+        J  = J_max * 25.4
+        T  = T_max * 25.4
         recess = self.makeSlotRecess(J, T, A)
         recess.translate(Base.Vector(0.0, 0.0, H))
         b_tbl = 1.5 * 25.4      # max threaded length per para 2.4.1(b)
 
     elif SType == "ASMEB18.6.3.16B":
-        P_tbl, A, H, _, _ = fa.dimTable
+        # CSV cols (inches): P, A_max, A_min, O_max, O_min, F_max, F_min, Driver, M_ref, P_max, P_min
+        P_tbl, A_max, A_min, O_max, O_min, F_max, F_min, Driver, M_ref, P_max, P_min = fa.dimTable
         mH, cT = FsData["ASMEB18.6.3.16Bextra"][fa.calc_diam]
-        A, H, mH = (25.4 * x for x in (A, H, mH))
+        A  = (A_max + A_min) / 2 * 25.4
+        H  = (O_max + O_min) / 2 * 25.4
+        mH = mH * 25.4
         recess = self.makeHCrossRecess(cT, mH)
         recess.translate(Base.Vector(0.0, 0.0, H))
         b_tbl = 1.5 * 25.4      # max threaded length per para 2.4.1(b)

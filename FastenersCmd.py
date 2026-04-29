@@ -233,10 +233,14 @@ FSScrewCommandTable = {
     "ASMEB18.6.1.3":  (translate("FastenerCmd", "Cross recessed flat countersunk head wood screws"), HCrossGroup, ScrewParametersLC),
     "ASMEB18.6.1.5":  (translate("FastenerCmd", "Cross recessed oval countersunk head wood screws"), HCrossGroup, ScrewParametersLC),
     "ASMEB18.6.3.1B": (translate("FastenerCmd", "UNC Cross recessed countersunk flat head screws"), HCrossGroup, ScrewParametersLC),
+    "ASMEB18.6.3.1C": (translate("FastenerCmd", "UNC Hexalobular socket countersunk flat head screws"), HexalobularSocketGroup, ScrewParametersLC),
     "ASMEB18.6.3.4B": (translate("FastenerCmd", "UNC Cross recessed oval countersunk head screws"), HCrossGroup, ScrewParametersLC),
+    "ASMEB18.6.3.4C": (translate("FastenerCmd", "UNC Hexalobular socket oval countersunk head screws"), HexalobularSocketGroup, ScrewParametersLC),
     "ASMEB18.6.3.9B": (translate("FastenerCmd", "UNC Cross recessed pan head screws"), HCrossGroup, ScrewParametersLC),
     "ASMEB18.6.3.10B":(translate("FastenerCmd", "UNC Cross recessed fillister head screws"), HCrossGroup, ScrewParametersLC),
-    "ASMEB18.6.3.12C":(translate("FastenerCmd", "UNC Cross recessed truss head screws"), HCrossGroup, ScrewParametersLC),
+    "ASMEB18.6.3.9C": (translate("FastenerCmd", "UNC Hexalobular socket pan head screws"), HexalobularSocketGroup, ScrewParametersLC),
+    "ASMEB18.6.3.10C":(translate("FastenerCmd", "UNC Hexalobular socket fillister head screws"), HexalobularSocketGroup, ScrewParametersLC),
+    "ASMEB18.6.3.12C":(translate("FastenerCmd", "UNC Hexalobular socket truss head screws"), HexalobularSocketGroup, ScrewParametersLC),
     "ASMEB18.6.3.16B":(translate("FastenerCmd", "UNC Cross recessed round head screws"), HCrossGroup, ScrewParametersLC),
     "DIN967":   (translate("FastenerCmd", "Cross recessed pan head screws with collar"), HCrossGroup, ScrewParametersLC),
     "DIN7996":  (translate("FastenerCmd", "Cross recessed pan head wood screw"), HCrossGroup, ScrewParametersLC),
@@ -902,6 +906,10 @@ class FSScrewObject(FSBaseObject):
             obj.addProperty("App::PropertyBool","MatchOuter","Parameters",
                 translate("FastenerCmd","Match outer thread diameter")).MatchOuter = \
                     FSParam.GetBool("MatchOuterDiameter")
+        _SECURITY_PIN_TYPES = {"ISO14579","ISO14580","ISO14581","ISO14582","ISO14583","ISO14584"}
+        if type in _SECURITY_PIN_TYPES and not hasattr(obj,"SecurityPin"):
+            obj.addProperty("App::PropertyBool","SecurityPin","Parameters",
+                translate("FastenerCmd","Add security (tamper-resistant) pin")).SecurityPin = False
         if "widthCode" in params and not hasattr(obj,"Width"):
             obj.addProperty("App::PropertyEnumeration","Width","Parameters",
                 translate("FastenerCmd","Body width code")).Width = \

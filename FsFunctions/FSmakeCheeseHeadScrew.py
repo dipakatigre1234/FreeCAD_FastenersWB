@@ -34,55 +34,121 @@ if _wb_t not in _sys_t.path:
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
-# ── Security pin helpers ──────────────────────────────────────────────────────
-_TORX_PIN_DIA_MM = {
-    "T6":  0.56, "T7":  0.56, "T8":  0.68, "T9":  0.68, "T10": 0.84,
-    "T15": 1.12, "T20": 1.40, "T25": 1.68, "T27": 1.68, "T30": 2.10,
-    "T40": 2.80, "T45": 3.36, "T50": 4.20,
-}
-_TORX_CHAMFER_H = 0.10
+# -- Security pin helpers ----------------------------------------------------
+# pin_r = (B/2 - Re) * 0.75 by default  (inscribed bore * 75%)
+# User sets SecurityPinDiameter [mm]; 0 = use standard diameter.
+# Chamfer: tiny 45-deg edge-break = min(pin_r*0.10, 0.25 mm)  max 0.25 mm.
 
 def _fs_float(v):
     if isinstance(v, (int, float)):
         return float(v)
     if isinstance(v, (list, tuple)):
         return _fs_float(v[0])
-    digits = ''.join(c for c in str(v).strip() if c.isdigit() or c == '.')
+    digits = "".join(c for c in str(v).strip() if c.isdigit() or c == ".")
     return float(digits) if digits else 0.0
 
-def _torx_size_str(tt):
-    s = str(tt).strip().upper()
-    return s if s.startswith("T") else "T" + s
 
-def _make_security_pin_cylinder(tt, z_base, z_top):
-    """Create a security (tamper-resistant) centre pin solid.
-    z_base : bottom of pin (extended below head base for robust fuse)
-    z_top  : tip of pin (flush with head top surface)
+def _torx_size_str(tt):
+    """Normalise any Torx designator to e.g. "T25".
+
+    Handles every format found in ISO and ASME CSV socket_no columns:
+      - float   30.0       -> "T30"   (ISO CSVs store socket_no as float)
+      - int     30         -> "T30"
+      - string  "T30"      -> "T30"
+      - string  "T30.0"    -> "T30"   (float with T prefix)
+      - quoted  '"T30"'    -> "T30"   (CSV parsing artifact)
+      - string  "30"       -> "T30"
+    """
+    s = str(tt).strip().strip('"').strip("'").strip().upper()
+    if s.startswith("T"):
+        num = s[1:]
+        try:
+            s = "T" + str(int(float(num)))
+        except ValueError:
+            pass
+    else:
+        try:
+            s = "T" + str(int(float(s)))
+        except ValueError:
+            s = "T" + s
+    return s
+
+
+def _get_torx_ABRe(torx_key, standard="ISO"):
+    """Return (A, B, Re) from iso10664def or asmeb18_6_3_torxdef."""
+    from FastenerBase import FsData
+    primary  = "asmeb18_6_3_torxdef" if standard.upper() == "ASME" else "iso10664def"
+    fallback = "iso10664def"          if standard.upper() == "ASME" else "asmeb18_6_3_torxdef"
+    for tbl in (primary, fallback):
+        try:
+            row = FsData[tbl][torx_key]
+            return float(row[0]), float(row[1]), float(row[2])
+        except (KeyError, IndexError, TypeError):
+            pass
+    return None, None, None
+
+
+def _standard_pin_r(tt, standard="ISO"):
+    """Standard (default) pin radius = (B/2 - Re) * 0.75."""
+    torx_key = _torx_size_str(tt)
+    A, B, Re = _get_torx_ABRe(torx_key, standard)
+    if B is not None and Re is not None:
+        return max((B / 2.0 - Re) * 0.75, 0.05)
+    return 0.3   # absolute fallback
+
+
+def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.0):
+    """Tamper-resistant centre pin with tiny 45-deg edge chamfer.
+
+    Parameters
+    ----------
+    tt         : Torx size string e.g. "T25"
+    z_base     : Z of pin bottom (world coords)
+    z_top      : Z of pin tip -- flush with head top
+    standard   : "ISO" or "ASME"
+    pin_dia_mm : User-specified diameter [mm].  0 = use standard diameter.
+                 If non-zero, clamped to minimum Re (lobe fillet radius) so
+                 the pin always contacts the recess body and never floats free.
     """
     ANCHOR_EXTRA = 2.0
     torx_key = _torx_size_str(tt)
-    pin_r    = _TORX_PIN_DIA_MM.get(torx_key, None)
-    total_h  = (z_top - z_base) + ANCHOR_EXTRA
-    if pin_r is None:
-        pin_r = min(total_h * 0.20, 2.0)
+
+    # Get torx geometry for clamping bounds
+    A, B, Re = _get_torx_ABRe(torx_key, standard)
+    Re = Re if Re is not None else 0.1
+
+    if float(pin_dia_mm) > 0.0:
+        pin_r = float(pin_dia_mm) / 2.0
+        # Clamp: pin must be at least Re wide so it contacts the recess centre post.
+        # If smaller than Re the pin floats inside the lobes without touching anything.
+        pin_r = max(pin_r, Re)
     else:
-        pin_r = pin_r / 2.0
-    chamfer_h   = _TORX_CHAMFER_H
-    chamfer_r   = chamfer_h
-    body_h      = total_h - chamfer_h
+        pin_r = _standard_pin_r(torx_key, standard)
+
+    # Tiny 45-deg edge-break at tip -- max 0.25 mm regardless of pin size
+    chamfer_h   = min(pin_r * 0.10, 0.25)
+    chamfer_tip = pin_r - chamfer_h          # 45-deg bevel
+
+    total_h     = (z_top - z_base) + ANCHOR_EXTRA
+    body_h      = max(total_h - chamfer_h, 0.01)
     actual_base = z_base - ANCHOR_EXTRA
-    body = Part.makeCylinder(pin_r, body_h,
-               FreeCAD.Vector(0.0, 0.0, actual_base), FreeCAD.Vector(0.0, 0.0, 1.0))
-    cone = Part.makeCone(pin_r, max(pin_r - chamfer_r, pin_r * 0.1), chamfer_h,
-               FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h), FreeCAD.Vector(0.0, 0.0, 1.0))
+
+    body = Part.makeCylinder(
+        pin_r, body_h,
+        FreeCAD.Vector(0.0, 0.0, actual_base),
+        FreeCAD.Vector(0.0, 0.0, 1.0))
+
+    cone = Part.makeCone(
+        pin_r, chamfer_tip, chamfer_h,
+        FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h),
+        FreeCAD.Vector(0.0, 0.0, 1.0))
+
+    # Prefer fused solid; fall back to compound to avoid coplanar-face (blue circle) bug
     try:
-        return body.fuse(cone)
+        result = body.fuse(cone)
+        return result if result.isValid() else Part.makeCompound([body, cone])
     except Exception:
-        return body
-
-
-
-
+        return Part.makeCompound([body, cone])
 
 
 def makeCheeseHeadScrew(self, fa):
@@ -123,12 +189,12 @@ def makeCheeseHeadScrew(self, fa):
         # Mean values (default)
         dk    = (dk_max + dk_min) / 2
         k     = (k_max  + k_min)  / 2
-        tt    = _torx_size_str(int(socket_no))
+        tt    = _torx_size_str(socket_no)
         t_min = (t_max  + t_min)  / 2
         r_fil = r * 2.0
-        recess = self.makeHexalobularRecess(tt, t_min, True)
-        if getattr(fa, "SecurityPin", True):
-            security_pin_solid = _make_security_pin_cylinder(tt, 0.0, _fs_float(k))
+        recess = self.makeHexalobularRecess(tt, t_min, True)   # ISO 10664 dims
+        if getattr(fa, "SecurityPin", False):
+            security_pin_solid = _make_security_pin_cylinder(tt, 0.0, _fs_float(k), standard="ISO", pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
     # ── Pitch override (Thread_Pitch / TPI from dashboard) ───────────────
     raw_pitch = getattr(fa, "calc_pitch", None)
     P = float(raw_pitch) if (raw_pitch is not None and float(raw_pitch) > 0.0) else P
@@ -163,7 +229,6 @@ def makeCheeseHeadScrew(self, fa):
     else:
         thread_length = length - r
     fm.AddPoint(tr,        -length + d_eff/10)
-    fm.AddPoint(d_eff*4/10, -length)
     fm.AddPoint(0.0, -length)
     screw = self.RevolveZ(fm.GetFace())
     # cut the driving feature, then add modelled threads if needed

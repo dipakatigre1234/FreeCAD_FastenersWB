@@ -34,52 +34,121 @@ if _wb_t not in _sys_t.path:
 import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
-# ── Security pin helpers ──────────────────────────────────────────────────────
-_TORX_PIN_DIA_MM = {
-    "T6":  0.56, "T7":  0.56, "T8":  0.68, "T9":  0.68, "T10": 0.84,
-    "T15": 1.12, "T20": 1.40, "T25": 1.68, "T27": 1.68, "T30": 2.10,
-    "T40": 2.80, "T45": 3.36, "T50": 4.20,
-}
-_TORX_CHAMFER_H = 0.10
+# -- Security pin helpers ----------------------------------------------------
+# pin_r = (B/2 - Re) * 0.75 by default  (inscribed bore * 75%)
+# User sets SecurityPinDiameter [mm]; 0 = use standard diameter.
+# Chamfer: tiny 45-deg edge-break = min(pin_r*0.10, 0.25 mm)  max 0.25 mm.
 
 def _fs_float(v):
     if isinstance(v, (int, float)):
         return float(v)
     if isinstance(v, (list, tuple)):
         return _fs_float(v[0])
-    digits = ''.join(c for c in str(v).strip() if c.isdigit() or c == '.')
+    digits = "".join(c for c in str(v).strip() if c.isdigit() or c == ".")
     return float(digits) if digits else 0.0
 
-def _torx_size_str(tt):
-    s = str(tt).strip().upper()
-    return s if s.startswith("T") else "T" + s
 
-def _make_security_pin_cylinder(tt, z_base, z_top):
-    """Create a security (tamper-resistant) centre pin solid.
-    z_base : bottom of pin; extended further down by ANCHOR_EXTRA for robust fuse.
-    z_top  : tip of pin (flush with head top surface, which is z=0 for countersunk).
+def _torx_size_str(tt):
+    """Normalise any Torx designator to e.g. "T25".
+
+    Handles every format found in ISO and ASME CSV socket_no columns:
+      - float   30.0       -> "T30"   (ISO CSVs store socket_no as float)
+      - int     30         -> "T30"
+      - string  "T30"      -> "T30"
+      - string  "T30.0"    -> "T30"   (float with T prefix)
+      - quoted  '"T30"'    -> "T30"   (CSV parsing artifact)
+      - string  "30"       -> "T30"
+    """
+    s = str(tt).strip().strip('"').strip("'").strip().upper()
+    if s.startswith("T"):
+        num = s[1:]
+        try:
+            s = "T" + str(int(float(num)))
+        except ValueError:
+            pass
+    else:
+        try:
+            s = "T" + str(int(float(s)))
+        except ValueError:
+            s = "T" + s
+    return s
+
+
+def _get_torx_ABRe(torx_key, standard="ISO"):
+    """Return (A, B, Re) from iso10664def or asmeb18_6_3_torxdef."""
+    from FastenerBase import FsData
+    primary  = "asmeb18_6_3_torxdef" if standard.upper() == "ASME" else "iso10664def"
+    fallback = "iso10664def"          if standard.upper() == "ASME" else "asmeb18_6_3_torxdef"
+    for tbl in (primary, fallback):
+        try:
+            row = FsData[tbl][torx_key]
+            return float(row[0]), float(row[1]), float(row[2])
+        except (KeyError, IndexError, TypeError):
+            pass
+    return None, None, None
+
+
+def _standard_pin_r(tt, standard="ISO"):
+    """Standard (default) pin radius = (B/2 - Re) * 0.75."""
+    torx_key = _torx_size_str(tt)
+    A, B, Re = _get_torx_ABRe(torx_key, standard)
+    if B is not None and Re is not None:
+        return max((B / 2.0 - Re) * 0.75, 0.05)
+    return 0.3   # absolute fallback
+
+
+def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.0):
+    """Tamper-resistant centre pin with tiny 45-deg edge chamfer.
+
+    Parameters
+    ----------
+    tt         : Torx size string e.g. "T25"
+    z_base     : Z of pin bottom (world coords)
+    z_top      : Z of pin tip -- flush with head top
+    standard   : "ISO" or "ASME"
+    pin_dia_mm : User-specified diameter [mm].  0 = use standard diameter.
+                 If non-zero, clamped to minimum Re (lobe fillet radius) so
+                 the pin always contacts the recess body and never floats free.
     """
     ANCHOR_EXTRA = 2.0
     torx_key = _torx_size_str(tt)
-    pin_r    = _TORX_PIN_DIA_MM.get(torx_key, None)
-    total_h  = (z_top - z_base) + ANCHOR_EXTRA
-    if pin_r is None:
-        pin_r = min(total_h * 0.20, 2.0)
-    else:
-        pin_r = pin_r / 2.0
-    chamfer_h   = _TORX_CHAMFER_H
-    chamfer_r   = chamfer_h
-    body_h      = total_h - chamfer_h
-    actual_base = z_base - ANCHOR_EXTRA
-    body = Part.makeCylinder(pin_r, body_h,
-               FreeCAD.Vector(0.0, 0.0, actual_base), FreeCAD.Vector(0.0, 0.0, 1.0))
-    cone = Part.makeCone(pin_r, max(pin_r - chamfer_r, pin_r * 0.1), chamfer_h,
-               FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h), FreeCAD.Vector(0.0, 0.0, 1.0))
-    try:
-        return body.fuse(cone)
-    except Exception:
-        return body
 
+    # Get torx geometry for clamping bounds
+    A, B, Re = _get_torx_ABRe(torx_key, standard)
+    Re = Re if Re is not None else 0.1
+
+    if float(pin_dia_mm) > 0.0:
+        pin_r = float(pin_dia_mm) / 2.0
+        # Clamp: pin must be at least Re wide so it contacts the recess centre post.
+        # If smaller than Re the pin floats inside the lobes without touching anything.
+        pin_r = max(pin_r, Re)
+    else:
+        pin_r = _standard_pin_r(torx_key, standard)
+
+    # Tiny 45-deg edge-break at tip -- max 0.25 mm regardless of pin size
+    chamfer_h   = min(pin_r * 0.10, 0.25)
+    chamfer_tip = pin_r - chamfer_h          # 45-deg bevel
+
+    total_h     = (z_top - z_base) + ANCHOR_EXTRA
+    body_h      = max(total_h - chamfer_h, 0.01)
+    actual_base = z_base - ANCHOR_EXTRA
+
+    body = Part.makeCylinder(
+        pin_r, body_h,
+        FreeCAD.Vector(0.0, 0.0, actual_base),
+        FreeCAD.Vector(0.0, 0.0, 1.0))
+
+    cone = Part.makeCone(
+        pin_r, chamfer_tip, chamfer_h,
+        FreeCAD.Vector(0.0, 0.0, z_top - chamfer_h),
+        FreeCAD.Vector(0.0, 0.0, 1.0))
+
+    # Prefer fused solid; fall back to compound to avoid coplanar-face (blue circle) bug
+    try:
+        result = body.fuse(cone)
+        return result if result.isValid() else Part.makeCompound([body, cone])
+    except Exception:
+        return Part.makeCompound([body, cone])
 
 
 from FastenerBase import FSFaceMaker
@@ -129,31 +198,55 @@ def makeCountersunkHeadScrew(self, fa):
         recess = self.makeSlotRecess(n_min, t_mean, dk_theo)
 
     elif SType == "ASMEB18.6.3.1A":
+        # CSV cols (mm) - same notation as 10Adef:
+        # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min, T_max, T_min
         csk_angle = math.radians(82)
-        P_tbl, b_tbl, dk_theo, dk_mean, _, n_min, r, t_mean = fa.dimTable
-        chamfer_end = False
+        P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
+            J_max, J_min, T_max, T_min = fa.dimTable
+        dk_theo = A_max
+        dk_mean = (A_max + A_min) / 2
+        n_min   = (J_max + J_min) / 2
+        t_mean  = (T_max + T_min) / 2
+        b_tbl   = length     # ASME flat CSK: fully threaded unless dashboard overrides
+        r       = 0.25
+        chamfer_end = True
         recess = self.makeSlotRecess(n_min, t_mean, dk_theo)
 
     elif SType == "ASMEB18.6.3.1B":
+        # CSV cols (mm) - same notation as 10Bdef:
+        # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min, T_max, T_min, p_max, p_min
         csk_angle = math.radians(82)
-        P_tbl, b_tbl, dk_theo, dk_mean, _, n_min, r, t_mean = fa.dimTable
-        chamfer_end = False
+        P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
+            J_max, J_min, T_max, T_min, p_max, p_min = fa.dimTable
+        dk_theo = A_max
+        dk_mean = (A_max + A_min) / 2
+        n_min   = (J_max + J_min) / 2
+        t_mean  = (T_max + T_min) / 2
+        b_tbl   = length
+        r       = 0.25
+        chamfer_end = True
         cT, mH = FsData["ASMEB18.6.3.1Bextra"][fa.calc_diam]
         recess = self.makeHCrossRecess(cT, mH * 25.4)
 
     elif SType == "ASMEB18.6.3.1C":
-        # CSV cols: P, b, dk_theo, dk_mean, k, socket_no, recess_dia_ref, p_max, p_min  (9 cols)
-        # NOTE: all numeric values are already stored in mm (same convention as 1A/1B)
+        # CSV cols (mm) - same notation as 10Cdef:
+        # P, A_max, A_min, H_max, H_min, O_max, O_min, DriveSize, p_max, p_min
         csk_angle = math.radians(82)
-        P_tbl, b_tbl, dk_theo, dk_mean, k_val, socket_no, recess_dia_ref, p_max, p_min = fa.dimTable
-        r = 0.25     # ASME doesn't spec a radius; assume 0.25 mm
-        t_mean = (p_max + p_min) / 2   # recess depth in mm
-        tt = _torx_size_str(socket_no) # already 'T5', 'T6', etc.
-        chamfer_end = False
-        recess = self.makeHexalobularRecess(tt, t_mean, False)
+        P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
+            socket_no, p_max, p_min = fa.dimTable
+        dk_theo = A_max
+        dk_mean = (A_max + A_min) / 2
+        k_val   = H_max    # head height
+        b_tbl   = length
+        r       = 0.25
+        t_mean  = (p_max + p_min) / 2
+        tt      = _torx_size_str(socket_no)
+        chamfer_end = True
+        recess = self.makeHexalobularRecessASME(tt, t_mean, False)
         if getattr(fa, "SecurityPin", False):
-            # countersunk: z=0 is head top, z=-k_val is head bottom (all in mm)
-            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k_val), 0.0)
+            security_pin_solid = _make_security_pin_cylinder(
+                tt, -_fs_float(k_val), 0.0, standard="ASME",
+                pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
 
     elif SType == "ISO7046":
         csk_angle = math.radians(90)
@@ -178,13 +271,13 @@ def makeCountersunkHeadScrew(self, fa):
         dk_mean = (dk_max + dk_min) / 2
         k       = (k_max  + k_min)  / 2
         r       = (r_max  + r_min)  / 2
-        tt      = _torx_size_str(int(socket_no))
+        tt      = _torx_size_str(socket_no)
         t_mean  = (t_max  + t_min)  / 2
         chamfer_end = True
-        recess = self.makeHexalobularRecess(tt, t_mean, False)
+        recess = self.makeHexalobularRecess(tt, t_mean, False)   # ISO 10664 dims
         if getattr(fa, "SecurityPin", False):
             # countersunk: z=0 is head top, z=-k is head bottom
-            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0)
+            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0, standard="ISO", pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
 
     elif SType == "ISO14582":
         # CSV cols: P, a_max, b, dk_theo, dk_max, dk_min, ds_max, ds_min,
@@ -203,13 +296,13 @@ def makeCountersunkHeadScrew(self, fa):
         # Mean values (default)
         dk_mean = (dk_max + dk_min) / 2
         r       = r_min
-        tt      = _torx_size_str(int(socket_no))
+        tt      = _torx_size_str(socket_no)
         t_mean  = (t_max  + t_min)  / 2
         k       = k_max   # ISO14582 only has k_max
         chamfer_end = True
-        recess = self.makeHexalobularRecess(tt, t_mean, False)
+        recess = self.makeHexalobularRecess(tt, t_mean, False)   # ISO 10664 dims
         if getattr(fa, "SecurityPin", False):
-            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0)
+            security_pin_solid = _make_security_pin_cylinder(tt, -_fs_float(k), 0.0, standard="ISO", pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
 
     else:
         raise NotImplementedError(f"Unknown fastener type: {SType}")
@@ -247,7 +340,6 @@ def makeCountersunkHeadScrew(self, fa):
     fm.AddPoint(0.0, -length)
 
     if chamfer_end:
-        fm.AddPoint(dia * 4 / 10, -length)
         fm.AddPoint(tr,           -length + dia / 10)
     else:
         fm.AddPoint(tr, -length)

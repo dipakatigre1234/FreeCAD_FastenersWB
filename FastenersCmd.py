@@ -146,7 +146,9 @@ FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Le
                    'Thread_Root',
                    'Thread_Pitch_Nut', 'Thread_Class_Nut',
                    # ASME nut internal thread properties (un_unr_internal_thread_minor_dia.csv)
-                   'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME']
+                   'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME',
+                   # Security pin -- must be in key so changes invalidate the cache
+                   'SecurityPin', 'SecurityPinDiameter']
 
 HexHeadGroup        = translate("FastenerCmd", "Hex head")
 HexagonSocketGroup  = translate("FastenerCmd", "Hexagon socket")
@@ -221,6 +223,7 @@ FSScrewCommandTable = {
     "ASMEB18.6.3.9A": (translate("FastenerCmd", "UNC Slotted pan head screws"), SlottedGroup, ScrewParametersLC),
     "ASMEB18.6.3.10A":(translate("FastenerCmd", "UNC Slotted fillister head screws"), SlottedGroup, ScrewParametersLC),
     "ASMEB18.6.3.12A":(translate("FastenerCmd", "UNC Slotted truss head screws"), SlottedGroup, ScrewParametersLC),
+    "ASMEB18.6.3.12B":(translate("FastenerCmd", "UNC Cross recessed truss head screws"), HCrossGroup, ScrewParametersLC),
     "ASMEB18.6.3.16A":(translate("FastenerCmd", "UNC Slotted round head screws"), SlottedGroup, ScrewParametersLC),
     "DIN84":    (translate("FastenerCmd", "(Superseded by ISO 1207) Slotted cheese head screw"), SlottedGroup, ScrewParametersLC),
     "DIN96":    (translate("FastenerCmd", "Slotted half round head wood screw"), SlottedGroup, ScrewParametersLC),
@@ -693,6 +696,14 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
+        # SecurityPin / SecurityPinDiameter changes must regenerate the shape
+        if prop in ("SecurityPin", "SecurityPinDiameter") and hasattr(fp, prop):
+            # When SecurityPin is toggled, show/hide the diameter field
+            if prop == "SecurityPin" and hasattr(fp, "SecurityPinDiameter"):
+                fp.setEditorMode("SecurityPinDiameter", 0 if fp.SecurityPin else 2)
+            FastenerBase.FSCache.clear()
+            return
+
         # ── ASME nut type/TPI/class cascade ─────────────────────────────────
         if prop == "Thread_Type_Nut" and hasattr(fp, "Thread_Type_Nut")                 and _TAI is not None                 and str(getattr(fp, "Type", "")).startswith("ASME"):
             _dia_an = str(getattr(fp, "Diameter", "") or "")
@@ -760,6 +771,13 @@ class FSScrewObject(FSBaseObject):
                         next((x for x in _d_opts if x != "Custom"), "Custom")
                 except Exception:
                     pass
+            FastenerBase.FSCache.clear()
+            return
+
+        # Diameter changed on any ASME non-external type (hexalobular screws, nuts, etc.)
+        # The metric handler above skips ASME types, the external handler above skips
+        # non-external types -- so this catches everything else (e.g. ASMEB18.6.3.1C/4C/9C/10C/12C).
+        if prop == "Diameter" and _is_asme_std(getattr(fp, "Type", "")):
             FastenerBase.FSCache.clear()
             return
 
@@ -906,10 +924,39 @@ class FSScrewObject(FSBaseObject):
             obj.addProperty("App::PropertyBool","MatchOuter","Parameters",
                 translate("FastenerCmd","Match outer thread diameter")).MatchOuter = \
                     FSParam.GetBool("MatchOuterDiameter")
-        _SECURITY_PIN_TYPES = {"ISO14579","ISO14580","ISO14581","ISO14582","ISO14583","ISO14584"}
-        if type in _SECURITY_PIN_TYPES and not hasattr(obj,"SecurityPin"):
+        # Hexalobular types that support a tamper-resistant (security) centre pin.
+        # ISO types: ISO 10664 drive geometry (makeHexalobularRecess)
+        # ASME types: ASME B18.6.3 drive geometry (makeHexalobularRecessASME)
+        # Both groups use the same _make_security_pin_cylinder() helper in their
+        # respective FsMake files, so the same SecurityPin property controls both.
+        _SECURITY_PIN_TYPES = {
+            # ── ISO hexalobular ───────────────────────────────────────────────
+            "ISO14579",   # Hexalobular socket head cap screws
+            "ISO14580",   # Hexalobular socket cheese head screws
+            "ISO14581",   # Hexalobular socket countersunk flat head screws
+            "ISO14582",   # Hexalobular socket countersunk high head screws
+            "ISO14583",   # Hexalobular socket pan head screws
+            "ISO14584",   # Hexalobular socket raised countersunk head screws
+            # ── ASME B18.6.3 hexalobular ─────────────────────────────────────
+            "ASMEB18.6.3.1C",  # Countersunk flat head
+            "ASMEB18.6.3.4C",  # Oval countersunk head
+            "ASMEB18.6.3.9C",  # Pan head
+            "ASMEB18.6.3.10C", # Fillister (oval / raised) head
+            "ASMEB18.6.3.12C", # Truss head
+        }
+        if type in _SECURITY_PIN_TYPES and not hasattr(obj, "SecurityPin"):
             obj.addProperty("App::PropertyBool","SecurityPin","Parameters",
                 translate("FastenerCmd","Add security (tamper-resistant) pin")).SecurityPin = False
+        if type in _SECURITY_PIN_TYPES and not hasattr(obj, "SecurityPinDiameter"):
+            obj.addProperty("App::PropertyFloat","SecurityPinDiameter","Parameters",
+                translate("FastenerCmd",
+                    "Security pin diameter [mm]. "
+                    "Enter 0 to use the standard diameter "
+                    "(75 % of inscribed bore = (B/2-Re)*1.5)."
+                )).SecurityPinDiameter = 0.0
+        # Show/hide SecurityPinDiameter depending on whether SecurityPin is enabled
+        if hasattr(obj, "SecurityPin") and hasattr(obj, "SecurityPinDiameter"):
+            obj.setEditorMode("SecurityPinDiameter", 0 if obj.SecurityPin else 2)
         if "widthCode" in params and not hasattr(obj,"Width"):
             obj.addProperty("App::PropertyEnumeration","Width","Parameters",
                 translate("FastenerCmd","Body width code")).Width = \

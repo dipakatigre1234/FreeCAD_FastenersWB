@@ -49,7 +49,6 @@ def makeHexNut(self, fa):
     - ISO 4034 Hexagon regular nuts (style 1) — Product grade C
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
     - ISO 7414 Hexagon heavy nuts — metric
-    - ASME B18.2.2 Table 3  — Hex Machine Screw Nuts (ASMEB18.2.2.3)
     - ASME B18.2.2 Table 5A — Hex Nuts (ASMEB18.2.2.5A)
     - ASME B18.2.2 Table 5B — Hex Jam Nuts (ASMEB18.2.2.5B)
     - ASME B18.2.2 Table 11 — Heavy Hex Nuts (11A) and Heavy Hex Jam Nuts (11B)
@@ -64,7 +63,6 @@ def makeHexNut(self, fa):
     dimTable column layout per type:
       ISO7414              : P, c, da, dw, e, m, mw, s_nom
       ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = mean(m), s = mean(s)
-      ASMEB18.2.2.3        : TPI, F_max, F_min, H_max, H_min (inches) → m = H_max*25.4, s = F_max*25.4
       ASMEB18.2.2.5A       : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm) → m=mean(m_a)
       ASMEB18.2.2.5B       : same CSV → m = mean(m_b) (jam nut height)
       ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = mean(m_a)
@@ -109,14 +107,6 @@ def makeHexNut(self, fa):
         e = (e_max + e_min) / 2
         m = (m_max + m_min) / 2
         s = (s_max + s_min) / 2
-    elif SType == 'ASMEB18.2.2.3':
-        # CSV columns: TPI, F_max, F_min, H_max, H_min (all in inches)
-        TPI, F_max, F_min, H_max, H_min = fa.dimTable
-        P = 1.0 / TPI * 25.4
-        s = ((F_max + F_min) / 2) * 25.4
-        m = ((H_max + H_min) / 2) * 25.4
-        e = s * 2 / sqrt3   # no e column in CSV — derive from s
-        da = dia
     elif SType == 'ASMEB18.2.2.5A':
         # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
         # 5A = Hex Nut  → use m_a (regular nut height)

@@ -27,6 +27,13 @@
 """
 from screw_maker import *
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingASME   as _TA
+import FSThreadingMetric as _TM
+
 
 def makeSetScrew(self, fa):
     """Creates a set screw or grub screw
@@ -48,6 +55,7 @@ def makeSetScrew(self, fa):
     SType = fa.baseType
     length = fa.calc_len
     dia = self.getDia(fa.calc_diam, False)
+    is_asme = SType.startswith("ASME")
     if SType in ['ISO4026', 'ISO4027', 'ISO4029']:
         P, t, dp, dt, df, s = fa.dimTable
     elif SType == 'ISO4028':
@@ -93,17 +101,26 @@ def makeSetScrew(self, fa):
     elif SType[:-1] == 'ASMEB18.3.5':
         P, t, dp, dt, df, s, z = fa.dimTable
 
+    # ── Pitch override (ThreadPitch / ThreadTPI from dashboard) ──────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    P = float(raw_pitch) if (raw_pitch is not None and float(raw_pitch) > 0.0) else P
+
+    # ── Effective thread diameter from threading module ───────────────────
+    # Keep the body diameter aligned with the thread cutter diameter, as in
+    # the newer FsMake implementations.
+    d_eff = _TA.get_shank_dia(fa, dia) if is_asme else _TM.get_shank_dia(fa, dia)
+
     # Revolve face
     if SType in ['ISO4026', 'ISO4766', 'ASMEB18.3.5A']:
-        screw = self.RevolveZ(makeFlatConeFace(dia, length, df, dp))
+        screw = self.RevolveZ(makeFlatConeFace(d_eff, length, df, dp))
     elif SType in ['ISO4027', 'ISO7434', 'ASMEB18.3.5B']:
-        screw = self.RevolveZ(makeFlatConeFace(dia, length, df, dt))
+        screw = self.RevolveZ(makeFlatConeFace(d_eff, length, df, dt))
     elif SType in ['ISO4028', 'ISO7435', 'ASMEB18.3.5C']:
-        screw = self.RevolveZ(makeDogFace(dia, length, df, dp, z))
+        screw = self.RevolveZ(makeDogFace(d_eff, length, df, dp, z))
     elif SType in ['ISO4029', 'ASMEB18.3.5D']:
-        screw = self.RevolveZ(makeCupFace(dia, length, df, dp))
+        screw = self.RevolveZ(makeCupFace(d_eff, length, df, dp))
     elif SType == 'ISO7436':
-        screw = self.RevolveZ(makeCupFace(dia, length, df, dz))
+        screw = self.RevolveZ(makeCupFace(d_eff, length, df, dz))
 
     # Make recess
     if SType == 'ISO4766' or SType[:5] == 'ISO74':
@@ -114,8 +131,10 @@ def makeSetScrew(self, fa):
 
     # produce a modelled thread if necessary
     if fa.Thread:
-        thread_cutter = self.CreateThreadCutter(dia, P, length)
-        screw = screw.cut(thread_cutter)
+        if is_asme:
+            screw = _TA.cut_thread(screw, fa, d_eff, length, 0.0, P)
+        else:
+            screw = _TM.cut_thread(screw, fa, d_eff, length, 0.0, P)
 
     return screw
 

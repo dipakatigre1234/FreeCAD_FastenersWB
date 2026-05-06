@@ -352,6 +352,7 @@ screwTables = {
     "ASMEB18.6.3.10B": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.10C": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.12A": ("Screw", "makePanHeadScrew"),
+    "ASMEB18.6.3.12B": ("Screw", "makePanHeadScrew"),  # FIX: was missing, caused KeyError
     "ASMEB18.6.3.12C": ("Screw", "makePanHeadScrew"),
     "ASMEB18.6.3.16A": ("Screw", "makeRoundHeadScrew"),
     "ASMEB18.6.3.16B": ("Screw", "makeRoundHeadScrew"),

@@ -110,12 +110,12 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
                  If non-zero, clamped to minimum Re (lobe fillet radius) so
                  the pin always contacts the recess body and never floats free.
     """
-    ANCHOR_EXTRA = 2.0
     torx_key = _torx_size_str(tt)
 
     # Get torx geometry for clamping bounds
     A, B, Re = _get_torx_ABRe(torx_key, standard)
     Re = Re if Re is not None else 0.1
+    anchor_extra = max(2.0, 0.75 * A) if A is not None else 2.0
 
     if float(pin_dia_mm) > 0.0:
         pin_r = float(pin_dia_mm) / 2.0
@@ -129,9 +129,9 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
     chamfer_h   = min(pin_r * 0.10, 0.25)
     chamfer_tip = pin_r - chamfer_h          # 45-deg bevel
 
-    total_h     = (z_top - z_base) + ANCHOR_EXTRA
+    total_h     = (z_top - z_base) + anchor_extra
     body_h      = max(total_h - chamfer_h, 0.01)
-    actual_base = z_base - ANCHOR_EXTRA
+    actual_base = z_base - anchor_extra
 
     body = Part.makeCylinder(
         pin_r, body_h,
@@ -198,38 +198,51 @@ def makeCountersunkHeadScrew(self, fa):
         recess = self.makeSlotRecess(n_min, t_mean, dk_theo)
 
     elif SType == "ASMEB18.6.3.1A":
-        # CSV cols (mm) - same notation as 10Adef:
-        # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min, T_max, T_min
+        # Support both current max/min table and legacy compact table.
         csk_angle = math.radians(82)
-        P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
-            J_max, J_min, T_max, T_min = fa.dimTable
-        dk_theo = A_max
-        dk_mean = (A_max + A_min) / 2
-        n_min   = (J_max + J_min) / 2
-        t_mean  = (T_max + T_min) / 2
-        b_tbl   = length     # ASME flat CSK: fully threaded unless dashboard overrides
-        r       = 0.25
+        if len(fa.dimTable) >= 11:
+            # Current CSV cols:
+            # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min, T_max, T_min
+            P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
+                J_max, J_min, T_max, T_min = fa.dimTable
+            dk_theo = A_max
+            dk_mean = (A_max + A_min) / 2
+            n_min   = (J_max + J_min) / 2
+            t_mean  = (T_max + T_min) / 2
+            b_tbl   = length
+            r       = 0.25
+        else:
+            # Legacy CSV cols:
+            # P, b, dk_theo, dk_mean, k, n_min, r, t_mean
+            P_tbl, b_tbl, dk_theo, dk_mean, _k, n_min, r, t_mean = fa.dimTable
         chamfer_end = True
         recess = self.makeSlotRecess(n_min, t_mean, dk_theo)
 
     elif SType == "ASMEB18.6.3.1B":
-        # CSV cols (mm) - same notation as 10Bdef:
-        # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min, T_max, T_min, p_max, p_min
+        # Support both current max/min table and legacy compact table.
         csk_angle = math.radians(82)
-        P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
-            J_max, J_min, T_max, T_min, p_max, p_min = fa.dimTable
-        dk_theo = A_max
-        dk_mean = (A_max + A_min) / 2
-        n_min   = (J_max + J_min) / 2
-        t_mean  = (T_max + T_min) / 2
-        b_tbl   = length
-        r       = 0.25
+        if len(fa.dimTable) >= 13:
+            # Current CSV cols:
+            # P, A_max, A_min, H_max, H_min, O_max, O_min, J_max, J_min,
+            # T_max, T_min, p_max, p_min
+            P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
+                J_max, J_min, T_max, T_min, p_max, p_min = fa.dimTable
+            dk_theo = A_max
+            dk_mean = (A_max + A_min) / 2
+            n_min   = (J_max + J_min) / 2
+            t_mean  = (T_max + T_min) / 2
+            b_tbl   = length
+            r       = 0.25
+        else:
+            # Legacy CSV cols:
+            # P, b, dk_theo, dk_mean, k, n_min, r, t_mean
+            P_tbl, b_tbl, dk_theo, dk_mean, _k, n_min, r, t_mean = fa.dimTable
         chamfer_end = True
         cT, mH = FsData["ASMEB18.6.3.1Bextra"][fa.calc_diam]
         recess = self.makeHCrossRecess(cT, mH * 25.4)
 
     elif SType == "ASMEB18.6.3.1C":
-        # CSV cols (mm) - same notation as 10Cdef:
+        # Current CSV cols:
         # P, A_max, A_min, H_max, H_min, O_max, O_min, DriveSize, p_max, p_min
         csk_angle = math.radians(82)
         P_tbl, A_max, A_min, H_max, H_min, O_max, O_min, \
@@ -340,6 +353,7 @@ def makeCountersunkHeadScrew(self, fa):
     fm.AddPoint(0.0, -length)
 
     if chamfer_end:
+        fm.AddPoint(dia * 4 / 10, -length)         # smooth outward tip chamfer
         fm.AddPoint(tr,           -length + dia / 10)
     else:
         fm.AddPoint(tr, -length)

@@ -109,12 +109,12 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
                  If non-zero, clamped to minimum Re (lobe fillet radius) so
                  the pin always contacts the recess body and never floats free.
     """
-    ANCHOR_EXTRA = 2.0
     torx_key = _torx_size_str(tt)
 
     # Get torx geometry for clamping bounds
     A, B, Re = _get_torx_ABRe(torx_key, standard)
     Re = Re if Re is not None else 0.1
+    anchor_extra = max(2.0, 0.75 * A) if A is not None else 2.0
 
     if float(pin_dia_mm) > 0.0:
         pin_r = float(pin_dia_mm) / 2.0
@@ -128,9 +128,9 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
     chamfer_h   = min(pin_r * 0.10, 0.25)
     chamfer_tip = pin_r - chamfer_h          # 45-deg bevel
 
-    total_h     = (z_top - z_base) + ANCHOR_EXTRA
+    total_h     = (z_top - z_base) + anchor_extra
     body_h      = max(total_h - chamfer_h, 0.01)
-    actual_base = z_base - ANCHOR_EXTRA
+    actual_base = z_base - anchor_extra
 
     body = Part.makeCylinder(
         pin_r, body_h,
@@ -259,10 +259,17 @@ def makeRaisedCountersunkScrew(self, fa):
         ht     = rf - (dk_mean / 2.0) / math.tan(head_arc_angle)
         tt     = _torx_size_str(DriveSize)
         t_mean = (p_max + p_min) / 2
+        A_drive, _, _ = _get_torx_ABRe(tt, "ASME")
+        if A_drive is not None:
+            # Match the ISO raised-head pipeline: place local z=0 where the
+            # domed head surface meets the Torx outer diameter A.
+            entry_z = ht - rf + math.sqrt(max(rf * rf - A_drive * A_drive / 4.0, 0.0))
+        else:
+            entry_z = ht
         recess = self.makeHexalobularRecessASME(tt, t_mean, True)
-        recess.translate(Base.Vector(0.0, 0.0, ht))
+        recess.translate(Base.Vector(0.0, 0.0, entry_z))
         if getattr(fa, "SecurityPin", False):
-            security_pin_solid = _make_security_pin_cylinder(tt, 0.0, _fs_float(ht), standard="ASME", pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
+            security_pin_solid = _make_security_pin_cylinder(tt, 0.0, _fs_float(entry_z), standard="ASME", pin_dia_mm=getattr(fa, "SecurityPinDiameter", 0.0))
     # lay out fastener profile
     # ── Pitch override (ThreadPitch / ThreadTPI from dashboard) ───────────
     raw_pitch = getattr(fa, "calc_pitch", None)
@@ -284,6 +291,7 @@ def makeRaisedCountersunkScrew(self, fa):
     fillet_start_ht = sharp_corner_ht - r * math.tan(csk_angle / 4)
     fm = FSFaceMaker()
     fm.AddPoint(0.0, -length)
+    fm.AddPoint(d_eff * 4 / 10, -length)    # smooth outward tip chamfer
     fm.AddPoint(tr, -length + d_eff / 10)
     if length + fillet_start_ht > b:  # partially threaded fastener
         thread_length = b

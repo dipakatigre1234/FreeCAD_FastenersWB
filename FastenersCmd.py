@@ -1384,8 +1384,21 @@ class FSScrewObject(FSBaseObject):
                         if hasattr(fp,"ScrewLength"):
                             fp.ScrewLength = screwMaker.GetThreadLength(
                                 fp.Type, fp.Diameter)
-                    fp.Length = "Custom" if origIsCustom else l
-                    if not origIsCustom and hasattr(fp,"LengthCustom"):
+                    # Guard: the saved Length string may not exist in the
+                    # rebuilt enum (e.g. after a fastener type was renamed).
+                    # Fall back to "Custom" so the object stays editable
+                    # instead of raising a ValueError and blocking the document.
+                    try:
+                        fp.Length = "Custom" if origIsCustom else l
+                    except ValueError:
+                        FreeCAD.Console.PrintWarning(
+                            f"[FastenersCmd] Length value '{l}' is not in the "
+                            f"enum for {fp.Type}/{fp.Diameter} — "
+                            f"resetting to Custom\n")
+                        if hasattr(fp, "LengthCustom"):
+                            fp.LengthCustom = FastenerBase.LenStr2Num(l)
+                        fp.Length = "Custom"
+                    if not origIsCustom and fp.Length != "Custom" and hasattr(fp,"LengthCustom"):
                         fp.LengthCustom = FastenerBase.LenStr2Num(l)
                 self.calc_len = l
         else:

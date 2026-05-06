@@ -593,10 +593,24 @@ class Screw:
         elif str(ct_int) in iso_data:
             key = str(ct_int)
         else:
-            raise KeyError(
-                f"makeHCrossRecess: CrossType {ct_int} not found in iso4757def "
-                f"(available keys: {list(iso_data.keys())})"
-            )
+            numeric_keys = []
+            for k in iso_data.keys():
+                try:
+                    numeric_keys.append(int(k))
+                except (ValueError, TypeError):
+                    pass
+            if numeric_keys and ct_int > max(numeric_keys):
+                fallback = max(numeric_keys)
+                key = fallback if fallback in iso_data else str(fallback)
+                FreeCAD.Console.PrintWarning(
+                    f"makeHCrossRecess: CrossType {ct_int} not found in "
+                    f"iso4757def; using largest available type {fallback}\n"
+                )
+            else:
+                raise KeyError(
+                    f"makeHCrossRecess: CrossType {ct_int} not found in iso4757def "
+                    f"(available keys: {list(iso_data.keys())})"
+                )
         b, e_mean, g, f_mean, r, t1, alpha, beta = iso_data[key]
         # ─────────────────────────────────────────────────────────────────────
 
@@ -790,19 +804,22 @@ class Screw:
 
         # --- optional entry chamfer ------------------------------------------
         if chamfer:
-            # 18° entry chamfer at top of recess opening.
-            # chamfer_h is capped at 25% of the actual recess depth so it never
-            # consumes the cavity body — the original 0.3*A formula produced a
-            # chamfer 67–83% of depth for all drive sizes, causing OCCT to
-            # generate non-manifold geometry (visible as blue faces in FreeCAD).
-            chamfer_angle = math.radians(18)
-            r_top    = A / 2.0
-            chamfer_h = min(0.3 * A, depth * 0.25)   # ≤ 25% of recess depth
-            r_bot    = r_top - chamfer_h * math.tan(chamfer_angle)
+            # 18-degree entry chamfer — exact original proven formula.
+            #
+            # The cone is placed at z=depth (top of lobe wire), direction -Z.
+            # It is very wide at z=depth (above head, in air) and narrows
+            # going down. By z=0 (head face, local) its radius = 0.505*A,
+            # which is 0.005*A wider than the lobe outer edge A/2 — just
+            # enough overlap for a clean fuse with no zero-thickness face.
+            # Below z=0 it continues narrowing into the recess.
+            #
+            # This formula is used verbatim for both ISO and ASME since A and B
+            # are already loaded from the correct standard table by the caller
+            # (iso10664def for ISO, asmeb18_6_3_torxdef for ASME).
             cone2 = Part.makeCone(
-                r_top,
-                max(r_bot, A * 0.05),
-                chamfer_h,
+                0.505 * A + depth / math.tan(math.radians(18)),
+                0.49 * B,
+                depth + (0.505 * A - 0.49 * B) * math.tan(math.radians(18)),
                 Base.Vector(0.0, 0.0, depth),
                 Base.Vector(0.0, 0.0, -1.0),
                 360

@@ -110,12 +110,12 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
                  If non-zero, clamped to minimum Re (lobe fillet radius) so
                  the pin always contacts the recess body and never floats free.
     """
-    ANCHOR_EXTRA = 2.0
     torx_key = _torx_size_str(tt)
 
     # Get torx geometry for clamping bounds
     A, B, Re = _get_torx_ABRe(torx_key, standard)
     Re = Re if Re is not None else 0.1
+    anchor_extra = max(2.0, 0.75 * A) if A is not None else 2.0
 
     if float(pin_dia_mm) > 0.0:
         pin_r = float(pin_dia_mm) / 2.0
@@ -129,9 +129,9 @@ def _make_security_pin_cylinder(tt, z_base, z_top, standard="ISO", pin_dia_mm=0.
     chamfer_h   = min(pin_r * 0.10, 0.25)
     chamfer_tip = pin_r - chamfer_h          # 45-deg bevel
 
-    total_h     = (z_top - z_base) + ANCHOR_EXTRA
+    total_h     = (z_top - z_base) + anchor_extra
     body_h      = max(total_h - chamfer_h, 0.01)
-    actual_base = z_base - ANCHOR_EXTRA
+    actual_base = z_base - anchor_extra
 
     body = Part.makeCylinder(
         pin_r, body_h,
@@ -229,6 +229,7 @@ def makeCheeseHeadScrew(self, fa):
     else:
         thread_length = length - r
     fm.AddPoint(tr,        -length + d_eff/10)
+    fm.AddPoint(d_eff * 4 / 10, -length)    # smooth outward tip chamfer
     fm.AddPoint(0.0, -length)
     screw = self.RevolveZ(fm.GetFace())
     # cut the driving feature, then add modelled threads if needed

@@ -260,6 +260,7 @@ def makeCylinderHeadScrew(self, fa):
             fm.AddPoint(tr, -1 * (length - b))
 
     fm.AddPoint(tr,             -length + d_eff / 10)
+    fm.AddPoint(d_eff * 4 / 10, -length)    # smooth outward tip chamfer
     fm.AddPoint(0.0,            -length)
 
     shape = self.RevolveZ(fm.GetFace())

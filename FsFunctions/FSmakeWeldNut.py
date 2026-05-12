@@ -26,6 +26,103 @@
 """
 
 from screw_maker import *
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
+try:
+    import FSThreadingASMEInternal as _TAI
+except Exception:
+    _TAI = None
+
+
+def _cut_weldnut_threads(self, shape, fa, dia, depth, P):
+    """Apply modelled internal threads for weld nuts (DIN/ISO metric + ASME fallback)."""
+    if not fa.Thread:
+        return shape
+
+    is_asme = str(getattr(fa, "baseType", "") or "").startswith("ASME")
+
+    if not is_asme and _TMI is not None:
+        try:
+            return _TMI.cut_internal_thread(shape, fa, dia, depth)
+        except Exception as ex:
+            FreeCAD.Console.PrintLog(
+                f"[FSmakeWeldNut] metric thread sweep failed for "
+                f"{fa.baseType} {fa.calc_diam}, falling back to legacy "
+                f"thread cutter: {ex}\n"
+            )
+
+    if is_asme:
+        eff_tpi = None
+        if _TAI is not None:
+            try:
+                eff_tpi = _TAI.resolve_nut_tpi(fa)
+            except Exception:
+                eff_tpi = None
+        if not eff_tpi and getattr(fa, "calc_tpi", None):
+            try:
+                eff_tpi = float(fa.calc_tpi)
+            except Exception:
+                eff_tpi = None
+        if not eff_tpi or eff_tpi <= 0:
+            eff_tpi = 25.4 / P if P > 0 else 8.0
+        p_thread = 25.4 / eff_tpi if eff_tpi > 0 else P
+        thread_dia = dia + 0.05 / eff_tpi
+        thread_cutter = self.CreateInnerThreadCutter(thread_dia, p_thread, depth + p_thread)
+        return shape.cut(thread_cutter)
+
+    if _TMI is not None:
+        try:
+            p_metric = _TMI.resolve_nut_pitch(fa)
+            if p_metric and p_metric > 0:
+                P = p_metric
+        except Exception:
+            pass
+    elif getattr(fa, "calc_pitch", None):
+        try:
+            if fa.calc_pitch > 0:
+                P = fa.calc_pitch
+        except Exception:
+            pass
+
+    thread_dia = dia + 0.05 * P
+    thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, depth + P)
+    return shape.cut(thread_cutter)
+
+
+def _metric_thread_pitch_for_nut(fa, P_default):
+    """Resolve metric nut pitch to keep bore/chamfer geometry aligned with thread cutter."""
+    if _TMI is not None:
+        try:
+            p = _TMI.resolve_nut_pitch(fa)
+            if p and p > 0:
+                return p
+        except Exception:
+            pass
+    try:
+        cp = float(getattr(fa, "calc_pitch", 0) or 0)
+        if cp > 0:
+            return cp
+    except Exception:
+        pass
+    return P_default
+
+
+def _metric_bore_dia_for_nut(self, fa, dia, P):
+    """Return bore diameter used by weld-nut pre-bore profile."""
+    if _TMI is not None:
+        try:
+            _dia_s = str(getattr(fa, "calc_diam", "") or "")
+            _p_s = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+            _cls_s = str(getattr(fa, "Thread_Class_Nut", "") or "6H")
+            if not _p_s:
+                _p_s = str(_metric_thread_pitch_for_nut(fa, P))
+            if _p_s:
+                return _TMI.bore_dia_from_table(fa, _dia_s, _p_s, _cls_s)
+        except Exception:
+            pass
+    return self.GetInnerThreadMinDiameter(dia, P, 0.0)
 
 
 def makeWeldNut(self, fa):
@@ -49,6 +146,7 @@ def makeWeldNut(self, fa):
 def _makeHexWeldNut(self, fa):
     dia = self.getDia(fa.calc_diam, True)
     P, b, d2, d3, h1, h2, m, s = fa.dimTable
+    P = _metric_thread_pitch_for_nut(fa, P)
     # overall hexagon shape
     shape = self.makeHexPrism(s, m)
     # add the chamfer to the top of the nut
@@ -79,7 +177,7 @@ def _makeHexWeldNut(self, fa):
     # add the bore for the threads.
     # there is also a shallow counterbore at the top face of the nut
     fm.Reset()
-    id = self.GetInnerThreadMinDiameter(dia, P, 0.0)
+    id = _metric_bore_dia_for_nut(self, fa, dia, P)
     bore_cham_ht = (dia * 1.05 - id) / 2 * math.tan(math.radians(30))
     fm.AddPoint(0.0, 0.0)
     fm.AddPoint(dia * 1.05 / 2, 0.0)
@@ -91,10 +189,7 @@ def _makeHexWeldNut(self, fa):
     fm.AddPoint(0.0, m)
     bore_cutter = self.RevolveZ(fm.GetFace())
     shape = shape.cut(bore_cutter)
-    # add modelled threads if needed
-    if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + P)
-        shape = shape.cut(thread_cutter)
+    shape = _cut_weldnut_threads(self, shape, fa, dia, m, P)
     # transform so that the XY-plane relates better to the installed height
     mat = Base.Matrix()
     mat.move(Base.Vector(0.0, 0.0, -h1))
@@ -106,7 +201,8 @@ def _makeHexWeldNut(self, fa):
 def _makeFlangedWeldNut(self, fa):
     dia = self.getDia(fa.calc_diam, True)
     P,b,c,d_a,d_c,e,f,g,m_min,m_max,s,r_1,r_2,_ = fa.dimTable
-    m=m_max
+    P = _metric_thread_pitch_for_nut(fa, P)
+    m = (m_min + m_max) / 2
     # main hexagonal body of the nut
     shape = self.makeHexPrism(s, m)
     # flanged section
@@ -124,7 +220,7 @@ def _makeFlangedWeldNut(self, fa):
     shape = shape.fuse(self.RevolveZ(fm.GetFace()))
     # internal bore
     fm.Reset()
-    id = self.GetInnerThreadMinDiameter(dia, P, 0.0)
+    id = _metric_bore_dia_for_nut(self, fa, dia, P)
     bore_cham_ht = (dia * 1.05 - id) / 2 * math.tan(math.radians(30))
     fm.AddPoint(0.0, 0.0)
     fm.AddPoint(dia * 1.05 / 2, 0.0)
@@ -156,10 +252,7 @@ def _makeFlangedWeldNut(self, fa):
                           Base.Vector(0.0, 0.0, 1.0), 120)
         shape = shape.cut(cutter)
     shape = shape.removeSplitter()
-    # add modelled threads if needed
-    if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + P)
-        shape = shape.cut(thread_cutter)
+    shape = _cut_weldnut_threads(self, shape, fa, dia, m, P)
     return shape
 
 
@@ -167,6 +260,7 @@ def _makeSquareWeldNut(self, fa):
     dia = self.getDia(fa.calc_diam, True)
     if fa.baseType == "DIN928":
         P, b, d2, d4, h1, h2, m, s = fa.dimTable
+    P = _metric_thread_pitch_for_nut(fa, P)
     # the main body of the nut is a rectangular prism
     shape = Part.makeBox(s, s, m + h1 + h2)
     shape.translate(Base.Vector(-s / 2, -s / 2, 0.0))
@@ -188,7 +282,7 @@ def _makeSquareWeldNut(self, fa):
     shape = shape.cut(bottom_cutter)
     # lay out a cutting tool to define the other features of the nut
     fm.Reset()
-    id = self.GetInnerThreadMinDiameter(dia, P, 0.0)
+    id = _metric_bore_dia_for_nut(self, fa, dia, P)
     bore_cham_ht = (dia * 1.05 - id) / 2 * math.tan(math.radians(45))
     fm.AddPoint(s * sqrt2 / 2, 0.0)
     fm.AddPoint(dia * 1.05 / 2, 0.0)
@@ -205,10 +299,7 @@ def _makeSquareWeldNut(self, fa):
     fm.AddPoint(s * sqrt2 / 2, m - top_cham_ht)
     revolve = self.RevolveZ(fm.GetFace())
     shape = shape.common(revolve)
-    # add modelled threads if needed
-    if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + h1 + h2 + P)
-        shape = shape.cut(thread_cutter)
+    shape = _cut_weldnut_threads(self, shape, fa, dia, m + h1 + h2, P)
     # transform so that the XY-plane relates better to the installed height
     mat = Base.Matrix()
     mat.move(Base.Vector(0.0, 0.0, -h1))

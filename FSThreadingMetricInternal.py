@@ -258,21 +258,33 @@ def resolve_nut_pitch(fa):
     """Resolve metric pitch mm for a nut from fa attributes.
 
     Priority:
-      1. fa.calc_pitch (user-set custom pitch or ThreadPitch override)
-      2. fa.Thread_Pitch_Nut (dashboard dropdown selection)
+      1. fa.Thread_Pitch_Nut (dashboard dropdown selection)
+      2. fa.calc_pitch (fallback / legacy override)
       3. Coarsest pitch from CSV for this dia
     """
-    cp = getattr(fa, "calc_pitch", None)
-    if cp and float(cp) > 0:
-        return float(cp)
-
     dia_str = str(getattr(fa, "calc_diam", "") or "")
     dia_key = _norm(dia_str.strip().lstrip("Mm"))
 
     p_prop = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
-    if p_prop:
+    if p_prop == "Custom":
+        try:
+            p_custom = float(getattr(fa, "Thread_Pitch_Nut_Custom", 0) or 0)
+            if p_custom > 0:
+                return p_custom
+        except Exception:
+            pass
+    if p_prop and p_prop != "Custom":
         try:
             return float(p_prop)
+        except Exception:
+            pass
+
+    cp = getattr(fa, "calc_pitch", None)
+    if cp:
+        try:
+            cp_f = float(cp)
+            if cp_f > 0:
+                return cp_f
         except Exception:
             pass
 
@@ -419,6 +431,14 @@ def set_nut_thread_visibility(fp, thread_on):
     """Show/hide metric internal thread properties in FreeCAD panel."""
     if hasattr(fp, "Thread_Pitch_Nut"):
         fp.setEditorMode("Thread_Pitch_Nut", 0 if thread_on else 2)
+    _is_custom = False
+    if hasattr(fp, "Thread_Pitch_Nut"):
+        try:
+            _is_custom = str(fp.Thread_Pitch_Nut) == "Custom"
+        except Exception:
+            _is_custom = False
+    if hasattr(fp, "Thread_Pitch_Nut_Custom"):
+        fp.setEditorMode("Thread_Pitch_Nut_Custom", 0 if (thread_on and _is_custom) else 2)
     _p = ""
     if hasattr(fp, "Thread_Pitch_Nut"):
         try:

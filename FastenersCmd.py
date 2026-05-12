@@ -144,9 +144,11 @@ FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Le
                    # Metric data-driven thread properties (metric_thread_dia.csv)
                    'Thread_Pitch', 'Thread_Class_ISO',
                    'Thread_Root',
-                   'Thread_Pitch_Nut', 'Thread_Class_Nut',
+                   'Thread_Pitch_Nut', 'Thread_Pitch_Nut_Custom', 'Thread_Class_Nut',
                    # ASME nut internal thread properties (un_unr_internal_thread_minor_dia.csv)
-                   'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME']
+                   'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME',
+                   # Security pin -- must be in key so changes invalidate the cache
+                   'SecurityPin', 'SecurityPinDiameter']
 
 HexHeadGroup        = translate("FastenerCmd", "Hex head")
 HexagonSocketGroup  = translate("FastenerCmd", "Hexagon socket")
@@ -221,6 +223,7 @@ FSScrewCommandTable = {
     "ASMEB18.6.3.9A": (translate("FastenerCmd", "UNC Slotted pan head screws"), SlottedGroup, ScrewParametersLC),
     "ASMEB18.6.3.10A":(translate("FastenerCmd", "UNC Slotted fillister head screws"), SlottedGroup, ScrewParametersLC),
     "ASMEB18.6.3.12A":(translate("FastenerCmd", "UNC Slotted truss head screws"), SlottedGroup, ScrewParametersLC),
+    "ASMEB18.6.3.12B":(translate("FastenerCmd", "UNC Cross recessed truss head screws"), HCrossGroup, ScrewParametersLC),
     "ASMEB18.6.3.16A":(translate("FastenerCmd", "UNC Slotted round head screws"), SlottedGroup, ScrewParametersLC),
     "DIN84":    (translate("FastenerCmd", "(Superseded by ISO 1207) Slotted cheese head screw"), SlottedGroup, ScrewParametersLC),
     "DIN96":    (translate("FastenerCmd", "Slotted half round head wood screw"), SlottedGroup, ScrewParametersLC),
@@ -284,6 +287,7 @@ FSScrewCommandTable = {
     # ── ASME B18.2.2 Table 6/8 — Hex Slotted Nuts ────────────────────────────
     "ASMEB18.2.2.6": (translate("FastenerCmd", "UNC Hex slotted thin nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.8": (translate("FastenerCmd", "UNC Hex slotted wide nuts"), NutGroup, NutParameters),
+    "ASMEB18.2.2.15": (translate("FastenerCmd", "UNC Hex castle nuts"), NutGroup, NutParameters),
     # ── ASME B18.2.2 Table 13A/13B — Hex Flange Nuts ─────────────────────────
     "ASMEB18.2.2.13A":(translate("FastenerCmd", "UNC Hex flange nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.13B":(translate("FastenerCmd", "UNC Large hex flange nuts"), NutGroup, NutParameters),
@@ -297,7 +301,8 @@ FSScrewCommandTable = {
     "DIN928":   (translate("FastenerCmd", "Square weld nuts"), NutGroup, NutParameters),
     "DIN929":   (translate("FastenerCmd", "Hexagonal weld nuts"), NutGroup, NutParameters),
     "DIN934":   (translate("FastenerCmd", "(Superseded by ISO 4035 and ISO 8673) Hexagon thin nuts, chamfered"), NutGroup, NutParameters),
-    "DIN935":   (translate("FastenerCmd", "Slotted / Castle nuts"), NutGroup, NutParameters),
+    "DIN935":   (translate("FastenerCmd", "Slotted nuts"), NutGroup, NutParameters),
+    "DIN935C":  (translate("FastenerCmd", "Castle nuts"), NutGroup, NutParameters),
     "DIN985":   (translate("FastenerCmd", "Nyloc nuts"), NutGroup, NutParameters),
     "DIN1587":  (translate("FastenerCmd", "Cap nuts"), NutGroup, NutParameters),
     "DIN6330":  (translate("FastenerCmd", "Hexagon nuts with a height of 1,5 d"), NutGroup, NutParameters),
@@ -460,9 +465,11 @@ def _is_asme_std(type_str):
     Covers 'ASME...' names (bolts/nuts) AND inch rod/tap/die types
     (ThreadedRodInch, ScrewTapInch, ScrewDieInch) which do not start with 'ASME'
     but belong to the ASME standard per FastenersStandardMap.
+    Also treats SAEJ fasteners that use UN internal thread selection
+    (e.g. SAEJ483a cup nuts) as ASME-threaded for property handling.
     """
     s = str(type_str)
-    return s.startswith("ASME") or FastenersStandardMap.get(s) == "ASME"
+    return s.startswith("ASME") or s.startswith("SAEJ") or FastenersStandardMap.get(s) == "ASME"
 
 
 def _is_asme(fp):
@@ -534,10 +541,7 @@ def _set_thread_props_visibility_inner(fp, thread_on):
                 fp.setEditorMode(_p, 2)
         # Show nut properties (no Thread_Root for nut)
         if _TMI is not None:
-            if hasattr(fp, "Thread_Pitch_Nut"):
-                fp.setEditorMode("Thread_Pitch_Nut", 0 if thread_on else 2)
-            if hasattr(fp, "Thread_Class_Nut"):
-                fp.setEditorMode("Thread_Class_Nut", 0 if thread_on else 2)
+            _TMI.set_nut_thread_visibility(fp, thread_on)
 
     else:
         # Metric bolt — show bolt props, hide nut props
@@ -676,8 +680,24 @@ class FSScrewObject(FSBaseObject):
                 and _TMI is not None:
             _dia_n = str(getattr(fp, "Diameter", "") or "")
             _p_n   = str(getattr(fp, "Thread_Pitch_Nut", "") or "")
+            _is_custom_n = (_p_n == "Custom")
+            if hasattr(fp, "Thread_Pitch_Nut_Custom"):
+                fp.setEditorMode("Thread_Pitch_Nut_Custom", 0 if _is_custom_n else 2)
+                if not _is_custom_n and _p_n:
+                    try:
+                        fp.Thread_Pitch_Nut_Custom = float(_p_n)
+                    except Exception:
+                        pass
             if _p_n and hasattr(fp, "Thread_Class_Nut"):
-                _nc = _TMI.valid_classes_for_dia_pitch(_dia_n, _p_n) or ["6H"]
+                _p_cls = _p_n
+                if _is_custom_n:
+                    try:
+                        _p_custom = float(getattr(fp, "Thread_Pitch_Nut_Custom", 0) or 0)
+                        if _p_custom > 0:
+                            _p_cls = str(_p_custom)
+                    except Exception:
+                        pass
+                _nc = _TMI.valid_classes_for_dia_pitch(_dia_n, _p_cls) or ["6H"]
                 try:
                     _cur_nc = str(fp.Thread_Class_Nut)   # read BEFORE list assign
                     fp.Thread_Class_Nut = _nc
@@ -686,23 +706,37 @@ class FSScrewObject(FSBaseObject):
                         fp.Thread_Class_Nut = _rest
                 except Exception:
                     pass
+            _set_thread_props_visibility(fp, hasattr(fp, "Thread") and bool(fp.Thread))
             FastenerBase.FSCache.clear()
             return
 
-        if prop in ("Thread_Class_Nut", "Thread_Root") and hasattr(fp, prop):
+        if prop == "Thread_Pitch_Nut_Custom" and hasattr(fp, "Thread_Pitch_Nut_Custom"):
+            _set_thread_props_visibility(fp, hasattr(fp, "Thread") and bool(fp.Thread))
+            FastenerBase.FSCache.clear()
+            return
+
+        if prop in ("Thread_Class_Nut", "Thread_Root", "Thread_Pitch_Nut_Custom") and hasattr(fp, prop):
+            FastenerBase.FSCache.clear()
+            return
+
+        # SecurityPin / SecurityPinDiameter changes must regenerate the shape
+        if prop in ("SecurityPin", "SecurityPinDiameter") and hasattr(fp, prop):
+            # When SecurityPin is toggled, show/hide the diameter field
+            if prop == "SecurityPin" and hasattr(fp, "SecurityPinDiameter"):
+                fp.setEditorMode("SecurityPinDiameter", 0 if fp.SecurityPin else 2)
             FastenerBase.FSCache.clear()
             return
 
         # ── ASME nut type/TPI/class cascade ─────────────────────────────────
-        if prop == "Thread_Type_Nut" and hasattr(fp, "Thread_Type_Nut")                 and _TAI is not None                 and str(getattr(fp, "Type", "")).startswith("ASME"):
+        if prop == "Thread_Type_Nut" and hasattr(fp, "Thread_Type_Nut")                 and _TAI is not None                 and _is_asme_std(str(getattr(fp, "Type", "") or "")):
             _dia_an = str(getattr(fp, "Diameter", "") or "")
             _type_an = str(getattr(fp, "Thread_Type_Nut", "") or "")
             if _type_an and hasattr(fp, "Thread_TPI_Nut"):
-                _ntpis = _TAI.valid_tpis_for_dia_type(_dia_an, _type_an) or ["8"]
+                _ntpis = _TAI.tpi_enum_options_for_nut(_dia_an, _type_an) or ["8", "Custom"]
                 try:
                     _cur_tpi = str(fp.Thread_TPI_Nut)
                     fp.Thread_TPI_Nut = _ntpis
-                    _rest_tpi = _cur_tpi if _cur_tpi in _ntpis else _ntpis[0]
+                    _rest_tpi = _cur_tpi if _cur_tpi in _ntpis else next((x for x in _ntpis if x != "Custom"), _ntpis[0])
                     if str(fp.Thread_TPI_Nut) != _rest_tpi:
                         fp.Thread_TPI_Nut = _rest_tpi
                 except Exception:
@@ -710,7 +744,7 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
-        if prop == "Thread_TPI_Nut" and hasattr(fp, "Thread_TPI_Nut")                 and _TAI is not None                 and str(getattr(fp, "Type", "")).startswith("ASME"):
+        if prop == "Thread_TPI_Nut" and hasattr(fp, "Thread_TPI_Nut")                 and _TAI is not None                 and _is_asme_std(str(getattr(fp, "Type", "") or "")):
             _dia_an  = str(getattr(fp, "Diameter", "") or "")
             _type_an = str(getattr(fp, "Thread_Type_Nut", "UNC") or "UNC")
             _tpi_an  = str(getattr(fp, "Thread_TPI_Nut", "") or "")
@@ -760,6 +794,13 @@ class FSScrewObject(FSBaseObject):
                         next((x for x in _d_opts if x != "Custom"), "Custom")
                 except Exception:
                     pass
+            FastenerBase.FSCache.clear()
+            return
+
+        # Diameter changed on any ASME non-external type (hexalobular screws, nuts, etc.)
+        # The metric handler above skips ASME types, the external handler above skips
+        # non-external types -- so this catches everything else (e.g. ASMEB18.6.3.1C/4C/9C/10C/12C).
+        if prop == "Diameter" and _is_asme_std(getattr(fp, "Type", "")):
             FastenerBase.FSCache.clear()
             return
 
@@ -906,10 +947,39 @@ class FSScrewObject(FSBaseObject):
             obj.addProperty("App::PropertyBool","MatchOuter","Parameters",
                 translate("FastenerCmd","Match outer thread diameter")).MatchOuter = \
                     FSParam.GetBool("MatchOuterDiameter")
-        _SECURITY_PIN_TYPES = {"ISO14579","ISO14580","ISO14581","ISO14582","ISO14583","ISO14584"}
-        if type in _SECURITY_PIN_TYPES and not hasattr(obj,"SecurityPin"):
+        # Hexalobular types that support a tamper-resistant (security) centre pin.
+        # ISO types: ISO 10664 drive geometry (makeHexalobularRecess)
+        # ASME types: ASME B18.6.3 drive geometry (makeHexalobularRecessASME)
+        # Both groups use the same _make_security_pin_cylinder() helper in their
+        # respective FsMake files, so the same SecurityPin property controls both.
+        _SECURITY_PIN_TYPES = {
+            # ── ISO hexalobular ───────────────────────────────────────────────
+            "ISO14579",   # Hexalobular socket head cap screws
+            "ISO14580",   # Hexalobular socket cheese head screws
+            "ISO14581",   # Hexalobular socket countersunk flat head screws
+            "ISO14582",   # Hexalobular socket countersunk high head screws
+            "ISO14583",   # Hexalobular socket pan head screws
+            "ISO14584",   # Hexalobular socket raised countersunk head screws
+            # ── ASME B18.6.3 hexalobular ─────────────────────────────────────
+            "ASMEB18.6.3.1C",  # Countersunk flat head
+            "ASMEB18.6.3.4C",  # Oval countersunk head
+            "ASMEB18.6.3.9C",  # Pan head
+            "ASMEB18.6.3.10C", # Fillister (oval / raised) head
+            "ASMEB18.6.3.12C", # Truss head
+        }
+        if type in _SECURITY_PIN_TYPES and not hasattr(obj, "SecurityPin"):
             obj.addProperty("App::PropertyBool","SecurityPin","Parameters",
                 translate("FastenerCmd","Add security (tamper-resistant) pin")).SecurityPin = False
+        if type in _SECURITY_PIN_TYPES and not hasattr(obj, "SecurityPinDiameter"):
+            obj.addProperty("App::PropertyFloat","SecurityPinDiameter","Parameters",
+                translate("FastenerCmd",
+                    "Security pin diameter [mm]. "
+                    "Enter 0 to use the standard diameter "
+                    "(75 % of inscribed bore = (B/2-Re)*1.5)."
+                )).SecurityPinDiameter = 0.0
+        # Show/hide SecurityPinDiameter depending on whether SecurityPin is enabled
+        if hasattr(obj, "SecurityPin") and hasattr(obj, "SecurityPinDiameter"):
+            obj.setEditorMode("SecurityPinDiameter", 0 if obj.SecurityPin else 2)
         if "widthCode" in params and not hasattr(obj,"Width"):
             obj.addProperty("App::PropertyEnumeration","Width","Parameters",
                 translate("FastenerCmd","Body width code")).Width = \
@@ -1043,16 +1113,28 @@ class FSScrewObject(FSBaseObject):
             if not hasattr(obj, "Thread_Pitch_Nut"):
                 _np = _TMI.valid_pitches_for_dia(_dia_nut)
                 if _np:
+                    _np_enum = list(_np) + ["Custom"]
                     obj.addProperty("App::PropertyEnumeration", "Thread_Pitch_Nut",
                         "Parameters",
                         translate("FastenerCmd",
                             "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
-                    ).Thread_Pitch_Nut = _np
+                    ).Thread_Pitch_Nut = _np_enum
                     try:
                         obj.Thread_Pitch_Nut = _np[0]
                     except Exception:
                         pass
                     obj.setEditorMode("Thread_Pitch_Nut", 2)
+            if not hasattr(obj, "Thread_Pitch_Nut_Custom"):
+                _init_np_custom = 1.0
+                try:
+                    _init_np_custom = float(str(getattr(obj, "Thread_Pitch_Nut", "1.0") or "1.0"))
+                except Exception:
+                    pass
+                obj.addProperty("App::PropertyFloat", "Thread_Pitch_Nut_Custom",
+                    "Parameters",
+                    translate("FastenerCmd", "Thread_Pitch_Nut Custom value (mm)")
+                ).Thread_Pitch_Nut_Custom = _init_np_custom
+                obj.setEditorMode("Thread_Pitch_Nut_Custom", 2)
             if not hasattr(obj, "Thread_Class_Nut"):
                 _np0 = ""
                 try:
@@ -1104,14 +1186,14 @@ class FSScrewObject(FSBaseObject):
                 except Exception:
                     pass
                 _at_now = _at_now or "UNC"
-                _atpis = _TAI.valid_tpis_for_dia_type(_dia_asme_nut, _at_now) or ["8"]
+                _atpis = _TAI.tpi_enum_options_for_nut(_dia_asme_nut, _at_now) or ["8", "Custom"]
                 obj.addProperty("App::PropertyEnumeration", "Thread_TPI_Nut",
                     "Parameters",
                     translate("FastenerCmd",
                         "Thread_TPI_Nut — ASME B1.1 threads per inch")
                 ).Thread_TPI_Nut = _atpis
                 try:
-                    obj.Thread_TPI_Nut = _atpis[0]
+                    obj.Thread_TPI_Nut = next((x for x in _atpis if x != "Custom"), _atpis[0])
                 except Exception:
                     pass
                 obj.setEditorMode("Thread_TPI_Nut", 2)
@@ -1337,8 +1419,21 @@ class FSScrewObject(FSBaseObject):
                         if hasattr(fp,"ScrewLength"):
                             fp.ScrewLength = screwMaker.GetThreadLength(
                                 fp.Type, fp.Diameter)
-                    fp.Length = "Custom" if origIsCustom else l
-                    if not origIsCustom and hasattr(fp,"LengthCustom"):
+                    # Guard: the saved Length string may not exist in the
+                    # rebuilt enum (e.g. after a fastener type was renamed).
+                    # Fall back to "Custom" so the object stays editable
+                    # instead of raising a ValueError and blocking the document.
+                    try:
+                        fp.Length = "Custom" if origIsCustom else l
+                    except ValueError:
+                        FreeCAD.Console.PrintWarning(
+                            f"[FastenersCmd] Length value '{l}' is not in the "
+                            f"enum for {fp.Type}/{fp.Diameter} — "
+                            f"resetting to Custom\n")
+                        if hasattr(fp, "LengthCustom"):
+                            fp.LengthCustom = FastenerBase.LenStr2Num(l)
+                        fp.Length = "Custom"
+                    if not origIsCustom and fp.Length != "Custom" and hasattr(fp,"LengthCustom"):
                         fp.LengthCustom = FastenerBase.LenStr2Num(l)
                 self.calc_len = l
         else:
@@ -1398,20 +1493,20 @@ class FSScrewObject(FSBaseObject):
             try: _at_e = str(fp.Thread_Type_Nut)
             except Exception: pass
             _at_e = _at_e or "UNC"
-            _atpis_e = _TAI.valid_tpis_for_dia_type(_dia_an_e, _at_e) or ["8"]
+            _atpis_e = _TAI.tpi_enum_options_for_nut(_dia_an_e, _at_e) or ["8", "Custom"]
             if not hasattr(fp, "Thread_TPI_Nut"):
                 fp.addProperty("App::PropertyEnumeration", "Thread_TPI_Nut",
                     "Parameters",
                     translate("FastenerCmd",
                         "Thread_TPI_Nut — ASME B1.1 threads per inch")
                 ).Thread_TPI_Nut = _atpis_e
-                try: fp.Thread_TPI_Nut = _atpis_e[0]
+                try: fp.Thread_TPI_Nut = next((x for x in _atpis_e if x != "Custom"), _atpis_e[0])
                 except Exception: pass
             else:
                 try:
                     _cur_atpi = str(fp.Thread_TPI_Nut)
                     fp.Thread_TPI_Nut = _atpis_e
-                    fp.Thread_TPI_Nut = _cur_atpi if _cur_atpi in _atpis_e else _atpis_e[0]
+                    fp.Thread_TPI_Nut = _cur_atpi if _cur_atpi in _atpis_e else next((x for x in _atpis_e if x != "Custom"), _atpis_e[0])
                 except Exception: pass
             # Thread_TPI_Nut_Custom — float spinner for custom TPI
             if not hasattr(fp, "Thread_TPI_Nut_Custom"):
@@ -1479,20 +1574,39 @@ class FSScrewObject(FSBaseObject):
                         "Parameters",
                         translate("FastenerCmd",
                             "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
-                    ).Thread_Pitch_Nut = _np
+                    ).Thread_Pitch_Nut = (list(_np) + ["Custom"])
                     try: fp.Thread_Pitch_Nut = _np[0]
                     except Exception: pass
                 else:
                     try:
                         _cur_np = str(fp.Thread_Pitch_Nut)
-                        fp.Thread_Pitch_Nut = _np
-                        fp.Thread_Pitch_Nut = _cur_np if _cur_np in _np else _np[0]
+                        _np_enum = list(_np) + ["Custom"]
+                        fp.Thread_Pitch_Nut = _np_enum
+                        fp.Thread_Pitch_Nut = _cur_np if _cur_np in _np_enum else _np[0]
                     except Exception: pass
+
+            if not hasattr(fp, "Thread_Pitch_Nut_Custom"):
+                _init_np_custom_e = 1.0
+                try:
+                    _init_np_custom_e = float(str(getattr(fp, "Thread_Pitch_Nut", "1.0") or "1.0"))
+                except Exception:
+                    pass
+                fp.addProperty("App::PropertyFloat", "Thread_Pitch_Nut_Custom",
+                    "Parameters",
+                    translate("FastenerCmd", "Thread_Pitch_Nut Custom value (mm)")
+                ).Thread_Pitch_Nut_Custom = _init_np_custom_e
 
             _pn_now = ""
             try: _pn_now = str(fp.Thread_Pitch_Nut)
             except Exception: pass
             _pn_now = _pn_now or (_np[0] if _np else "1.0")
+            if _pn_now == "Custom":
+                try:
+                    _pn_custom = float(getattr(fp, "Thread_Pitch_Nut_Custom", 0) or 0)
+                    if _pn_custom > 0:
+                        _pn_now = str(_pn_custom)
+                except Exception:
+                    pass
             _cn = _TMI.valid_classes_for_dia_pitch(_dia_pre, _pn_now) or ["6H"]
             if not hasattr(fp, "Thread_Class_Nut"):
                 fp.addProperty("App::PropertyEnumeration", "Thread_Class_Nut",
@@ -1652,10 +1766,15 @@ class FSScrewObject(FSBaseObject):
                             "Parameters",
                             translate("FastenerCmd",
                                 "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
-                        ).Thread_Pitch_Nut = _np_e
+                        ).Thread_Pitch_Nut = (list(_np_e) + ["Custom"])
                         try: fp.Thread_Pitch_Nut = _np_e[0]
                         except Exception: pass
                         fp.setEditorMode("Thread_Pitch_Nut", 0)
+                if not hasattr(fp, "Thread_Pitch_Nut_Custom"):
+                    fp.addProperty("App::PropertyFloat", "Thread_Pitch_Nut_Custom",
+                        "Parameters",
+                        translate("FastenerCmd", "Thread_Pitch_Nut Custom value (mm)")
+                    ).Thread_Pitch_Nut_Custom = 1.0
             if hasattr(fp, "Thread_Pitch"):
                 _dia_e   = str(fp.Diameter or "")
                 _new_p_e = _TM.valid_pitches_for_dia(_dia_e)

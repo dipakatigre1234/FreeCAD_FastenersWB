@@ -49,7 +49,6 @@ def makeHexNut(self, fa):
     - ISO 4034 Hexagon regular nuts (style 1) — Product grade C
     - ISO 4035 Hexagon thin nuts chamfered (style 0) — Product grades A and B
     - ISO 7414 Hexagon heavy nuts — metric
-    - ASME B18.2.2 Table 3  — Hex Machine Screw Nuts (ASMEB18.2.2.3)
     - ASME B18.2.2 Table 5A — Hex Nuts (ASMEB18.2.2.5A)
     - ASME B18.2.2 Table 5B — Hex Jam Nuts (ASMEB18.2.2.5B)
     - ASME B18.2.2 Table 11 — Heavy Hex Nuts (11A) and Heavy Hex Jam Nuts (11B)
@@ -64,7 +63,6 @@ def makeHexNut(self, fa):
     dimTable column layout per type:
       ISO7414              : P, c, da, dw, e, m, mw, s_nom
       ASMEB18.2.2.1A       : P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm) → m = mean(m), s = mean(s)
-      ASMEB18.2.2.3        : TPI, F_max, F_min, H_max, H_min (inches) → m = H_max*25.4, s = F_max*25.4
       ASMEB18.2.2.5A       : P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm) → m=mean(m_a)
       ASMEB18.2.2.5B       : same CSV → m = mean(m_b) (jam nut height)
       ASMEB18.2.2.11A      : P, da, s_min, s_max, e_min, e_max, m_a_min, m_a_max, m_b_min, m_b_max → m = mean(m_a)
@@ -99,8 +97,91 @@ def makeHexNut(self, fa):
 
     # ── Unpack dimension table ────────────────────────────────────────────────
     if SType == "ISO7414":
-        # CSV columns: P, c, da, dw, e, m, mw, s_nom
-        P, _, da, _, e, m, _, s = fa.dimTable
+        # CSV columns (updated): P, c, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[2]
+        da_min = fa.dimTable[3]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[5]
+        m_max = fa.dimTable[6]
+        m_min = fa.dimTable[7]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[9]
+    elif SType == "ISO4032":
+        # CSV columns (updated): P, c, damax, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da = fa.dimTable[2]
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[8]
+    elif SType == "ISO4033":
+        # CSV columns (updated): P, c, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[2]
+        da_min = fa.dimTable[3]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[5]
+        m_max = fa.dimTable[6]
+        m_min = fa.dimTable[7]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[9]
+    elif SType == "ISO4034":
+        # CSV columns (updated): P, dw, e, m_max, m_min, mw, s_nom
+        # ISO4034 table does not provide da in this notation; use nominal
+        # thread diameter as a stable fallback for chamfer geometry.
+        P = fa.dimTable[0]
+        e = fa.dimTable[2]
+        m_max = fa.dimTable[3]
+        m_min = fa.dimTable[4]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[6]
+        da = dia
+    elif SType == "ISO4035":
+        # CSV columns (updated): P, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[1]
+        da_min = fa.dimTable[2]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[8]
+    elif SType == "ISO8673":
+        # CSV columns (updated): P, c_max, c_min, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[3]
+        da_min = fa.dimTable[4]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[6]
+        m_max = fa.dimTable[7]
+        m_min = fa.dimTable[8]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[10] + fa.dimTable[11]) / 2
+    elif SType == "ISO8674":
+        # CSV columns (updated): P, c_max, c_min, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[3]
+        da_min = fa.dimTable[4]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[6]
+        m_max = fa.dimTable[7]
+        m_min = fa.dimTable[8]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[10] + fa.dimTable[11]) / 2
+    elif SType == "ISO8675":
+        # CSV columns (updated): P, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[1]
+        da_min = fa.dimTable[2]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[8] + fa.dimTable[9]) / 2
     elif SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, e, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
@@ -109,14 +190,6 @@ def makeHexNut(self, fa):
         e = (e_max + e_min) / 2
         m = (m_max + m_min) / 2
         s = (s_max + s_min) / 2
-    elif SType == 'ASMEB18.2.2.3':
-        # CSV columns: TPI, F_max, F_min, H_max, H_min (all in inches)
-        TPI, F_max, F_min, H_max, H_min = fa.dimTable
-        P = 1.0 / TPI * 25.4
-        s = ((F_max + F_min) / 2) * 25.4
-        m = ((H_max + H_min) / 2) * 25.4
-        e = s * 2 / sqrt3   # no e column in CSV — derive from s
-        da = dia
     elif SType == 'ASMEB18.2.2.5A':
         # CSV columns: P, da, e_max, e_min, m_a_max, m_a_min, m_b_max, m_b_min, s_max, s_min (mm)
         # 5A = Hex Nut  → use m_a (regular nut height)
@@ -298,8 +371,9 @@ def makeHexNut(self, fa):
                 _eff_tpi_c = eff_tpi
             if not _eff_tpi_c or _eff_tpi_c <= 0:
                 _eff_tpi_c = 25.4 / P if P > 0 else 8.0
+            _p_thread = 25.4 / _eff_tpi_c if _eff_tpi_c > 0 else P
             thread_dia = dia + 0.05 / _eff_tpi_c
-            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, _p_thread, m + _p_thread)
             nut = nut.cut(thread_cutter)
         else:
             thread_dia    = dia + 0.05 * P

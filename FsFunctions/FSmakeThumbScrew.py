@@ -32,6 +32,12 @@ from FreeCAD import Base
 from screw_maker import FsData
 from FastenerBase import FSFaceMaker
 
+import sys as _sys_t, os as _os_t
+_wb_t = _os_t.path.dirname(_os_t.path.dirname(_os_t.path.abspath(__file__)))
+if _wb_t not in _sys_t.path:
+    _sys_t.path.insert(0, _wb_t)
+import FSThreadingMetric as _TM
+
 
 def makeThumbScrew(self, fa):
     """Create a thumb screw.
@@ -45,6 +51,12 @@ def makeThumbScrew(self, fa):
     length = fa.calc_len
     dia = self.getDia(fa.calc_diam, False)
     P = FsData["ISO262def"][fa.Diameter][0]
+
+    # Match the newer FsMake files: dashboard pitch override wins.
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    P = float(raw_pitch) if (raw_pitch is not None and float(raw_pitch) > 0.0) else P
+    d_eff = _TM.get_shank_dia(fa, dia)
+
     if SType in ["DIN464", "DIN465"]:
         _, c, dk, _, _, ds, _, h, _, _, k, _, n, _, _, r, t, _, _, knurl = fa.dimTable
         kn0 = h - k
@@ -71,9 +83,9 @@ def makeThumbScrew(self, fa):
         fm.AddPoint(g / 2 + rr, 0.0)
         fm.AddArc2(0.0, -rr, 90)
         fm.AddPoint(g / 2, -f1)
-        fm.AddPoint(dia / 2, -f2)
-        fm.AddPoint(dia / 2, -length + dia / 10)
-        fm.AddPoint(dia / 2 - dia / 10, -length)
+        fm.AddPoint(d_eff / 2, -f2)
+        fm.AddPoint(d_eff / 2, -length + d_eff / 10)
+        fm.AddPoint(d_eff / 2 - d_eff / 10, -length)
         fm.AddPoint(0.0, -length)
         thread_dz = -f1
         thread_l = length - f1
@@ -111,18 +123,19 @@ def makeThumbScrew(self, fa):
             fm.AddPoint(ds / 2, 0.0)
         # Shaft
         if fa.Diameter in ["M1", "M1.2", "M1.4", "M1.6"]:
-            fm.AddPoint(dia / 2 + r, 0.0)
+            fm.AddPoint(d_eff / 2 + r, 0.0)
             fm.AddArc2(0.0, -r, 90)
-            fm.AddPoint(dia / 2, -length)
+            fm.AddPoint(d_eff / 2, -length + d_eff / 10)
+            fm.AddPoint(d_eff * 4 / 10, -length)
             fm.AddPoint(0.0, -length)
             thread_dz = 0
             thread_l = length
         else:
             fm.AddArc2(0.0, -rr, 90)
             fm.AddPoint(g / 2, -f1)
-            fm.AddPoint(dia / 2, -f2)
-            fm.AddPoint(dia / 2, -length + dia / 10)
-            fm.AddPoint(dia / 2 - dia / 10, -length)
+            fm.AddPoint(d_eff / 2, -f2)
+            fm.AddPoint(d_eff / 2, -length + d_eff / 10)
+            fm.AddPoint(d_eff / 2 - d_eff / 10, -length)
             fm.AddPoint(0.0, -length)
             thread_dz = -f1
             thread_l = length - f1
@@ -141,9 +154,7 @@ def makeThumbScrew(self, fa):
     if fa.Thread:
         knurling_cutter = straightCutter(dk, 0.975 * dk, kn0, kn)
         screw = screw.cut(knurling_cutter)
-        thread_cutter = self.CreateThreadCutter(dia, P, thread_l)
-        thread_cutter.translate(Base.Vector(0.0, 0.0, thread_dz))
-        screw = screw.cut(thread_cutter)
+        screw = _TM.cut_thread(screw, fa, d_eff, thread_l, thread_dz, P)
 
     return screw
 

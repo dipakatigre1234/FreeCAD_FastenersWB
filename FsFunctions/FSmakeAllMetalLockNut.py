@@ -27,6 +27,42 @@
 
 
 from screw_maker import *
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
+
+
+def _metric_thread_pitch_for_nut(fa, p_default):
+    if _TMI is not None:
+        try:
+            p = _TMI.resolve_nut_pitch(fa)
+            if p and p > 0:
+                return p
+        except Exception:
+            pass
+    try:
+        cp = float(getattr(fa, "calc_pitch", 0) or 0)
+        if cp > 0:
+            return cp
+    except Exception:
+        pass
+    return p_default
+
+
+def _metric_bore_dia_for_nut(self, fa, dia, p):
+    if _TMI is not None:
+        try:
+            _dia_s = str(getattr(fa, "calc_diam", "") or "")
+            _p_s = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+            _cls_s = str(getattr(fa, "Thread_Class_Nut", "6H") or "6H")
+            if not _p_s:
+                _p_s = str(_metric_thread_pitch_for_nut(fa, p))
+            if _p_s:
+                return _TMI.bore_dia_from_table(fa, _dia_s, _p_s, _cls_s)
+        except Exception:
+            pass
+    return self.GetInnerThreadMinDiameter(dia, p, 0.0)
 
 
 def makeAllMetalLockNut(self, fa):
@@ -37,16 +73,25 @@ def makeAllMetalLockNut(self, fa):
     - ISO 10513 all metal lock nuts with fine pitch thread
     """
     dia = self.getDia(fa.calc_diam, True)
-    if fa.baseType in ["ISO7719", "ISO7720", "ISO10513"]:
+    if fa.baseType == "ISO10513":
+        # ISO10513def columns:
+        # P, d_a_max, d_a_min, d_w_min, e_min, h_max, h_min, m_w_min, s_max, s_min
+        P = fa.dimTable[0]
+        h = (fa.dimTable[5] + fa.dimTable[6]) / 2
+        m_w = fa.dimTable[7]
+        s = (fa.dimTable[8] + fa.dimTable[9]) / 2
+    elif fa.baseType in ["ISO7719", "ISO7720"]:
         P, _, _, _, _, h, _, m_w, s, _ = fa.dimTable
     else:
         raise NotImplementedError(f"Unknown fastener type: {fa.Type}")
+    P = _metric_thread_pitch_for_nut(fa, P)
+    bore_dia = _metric_bore_dia_for_nut(self, fa, dia, P)
     # main hexagonal body of the nut
     shape = self.makeHexPrism(s, h)
 
     # internal bore
     fm = FSFaceMaker()
-    id = self.GetInnerThreadMinDiameter(dia, P, 0.0)
+    id = bore_dia
     bore_cham_ht = (dia * 1.05 - id) / 2 * tan15
     fm.AddPoint(0.0, 0.0)
     fm.AddPoint(dia * 1.05 / 2, 0.0)
@@ -73,6 +118,15 @@ def makeAllMetalLockNut(self, fa):
     shape = shape.cut(top_cham_cutter)
     # add modelled threads if needed
     if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, h + P)
-        shape = shape.cut(thread_cutter)
+        if _TMI is not None:
+            try:
+                shape = _TMI.cut_internal_thread(shape, fa, dia, h)
+            except Exception:
+                thread_dia = dia + 0.05 * P
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, h + P)
+                shape = shape.cut(thread_cutter)
+        else:
+            thread_dia = dia + 0.05 * P
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, h + P)
+            shape = shape.cut(thread_cutter)
     return shape

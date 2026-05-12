@@ -1,0 +1,93 @@
+fastener name,standard,standard code
+UNC Square bolts,ASME,ASME B18.2.1.1
+UNC Hex bolts,ASME,ASME B18.2.1.2
+UNC Heavy hex bolts,ASME,ASME B18.2.1.3
+UNC Hex head screws,ASME,ASME B18.2.1.6
+UNC Heavy hex screws,ASME,ASME B18.2.1.7
+UNC Hex head screws with flange,ASME,ASME B18.2.1.8
+UNC External 6-Lobe (Torx) flanged screws,ASME,ASME B18.2.1.9
+Hex head wood screw,DIN,DIN 571
+Hex head screw,DIN,DIN 933
+Hex head screw,DIN,DIN 961
+"Hexagon bolt with flange, small series",EN,EN 1662
+"Hexagon bolt with flange, heavy series",EN,EN 1665
+Hexagon head bolts with reduced shank,ISO,ISO 4015
+Hex head screws with fine pitch thread,ISO,ISO 8676
+Hex head bolt with fine pitch thread,ISO,ISO 8765
+UNC Hex socket head cap screws,ASME,ASME B18.3.1A
+UNC Hex socket head cap screws with low head,ASME,ASME B18.3.1G
+UNC Hex socket countersunk head screws,ASME,ASME B18.3.2
+UNC Hex socket button head screws,ASME,ASME B18.3.3A
+UNC Hex socket button head screws with flange,ASME,ASME B18.3.3B
+UNC Hexagon socket head shoulder screws,ASME,ASME B18.3.4
+Hexagon socket head cap screws with low head with centre,DIN,DIN 6912
+Hexagon socket head cap screws with low head,DIN,DIN 7984
+Hexagon socket head cap screw,ISO,ISO 4762
+Hexagon socket head shoulder screw,ISO,ISO 7379
+Hexagon socket button head screw,ISO,ISO 7380-1
+Hexagon socket button head screws with collar,ISO,ISO 7380-2
+Hexagon socket countersunk head screw,ISO,ISO 10642
+Hexalobular socket head cap screws,ISO,ISO 14579
+Hexalobular socket cheese head screws,ISO,ISO 14580
+Hexalobular socket countersunk flat head screws,ISO,ISO 14581
+"Hexalobular socket countersunk head screws, high head",ISO,ISO 14582
+Hexalobular socket pan head screws,ISO,ISO 14583
+Hexalobular socket raised countersunk head screws,ISO,ISO 14584
+Slotted flat countersunk head wood screws,ASME,ASME B18.6.1.2
+Slotted oval countersunk head wood screws,ASME,ASME B18.6.1.4
+UNC slotted countersunk flat head screws,ASME,ASME B18.6.3.1A
+UNC Slotted oval countersunk head screws,ASME,ASME B18.6.3.4A
+UNC Slotted pan head screws,ASME,ASME B18.6.3.9A
+UNC Slotted fillister head screws,ASME,ASME B18.6.3.10A
+UNC Slotted truss head screws,ASME,ASME B18.6.3.12A
+UNC Cross recessed truss head screws,ASME,ASME B18.6.3.12B
+UNC Slotted round head screws,ASME,ASME B18.6.3.16A
+(Superseded by ISO 1207) Slotted cheese head screw,DIN,DIN 84
+Slotted half round head wood screw,DIN,DIN 96
+(Type 1) Half — round head wood screw,GOST,GOST 1144-1
+(Type 2) Half — round head wood screw,GOST,GOST 1144-2
+Slotted cheese head screw,ISO,ISO 1207
+Slotted pan head screw,ISO,ISO 1580
+Slotted countersunk flat head screw,ISO,ISO 2009
+Slotted raised countersunk head screw,ISO,ISO 2010
+Cross recessed flat countersunk head wood screws,ASME,ASME B18.6.1.3
+Cross recessed oval countersunk head wood screws,ASME,ASME B18.6.1.5
+UNC Cross recessed countersunk flat head screws,ASME,ASME B18.6.3.1B
+UNC Hexalobular socket countersunk flat head screws,ASME,ASME B18.6.3.1C
+UNC Cross recessed oval countersunk head screws,ASME,ASME B18.6.3.4B
+UNC Hexalobular socket oval countersunk head screws,ASME,ASME B18.6.3.4C
+UNC Cross recessed pan head screws,ASME,ASME B18.6.3.9B
+UNC Cross recessed fillister head screws,ASME,ASME B18.6.3.10B
+UNC Hexalobular socket pan head screws,ASME,ASME B18.6.3.9C
+UNC Hexalobular socket fillister head screws,ASME,ASME B18.6.3.10C
+UNC Hexalobular socket truss head screws,ASME,ASME B18.6.3.12C
+UNC Cross recessed round head screws,ASME,ASME B18.6.3.16B
+Cross recessed pan head screws with collar,DIN,DIN 967
+Cross recessed pan head wood screw,DIN,DIN 7996
+(Type 3) Half — round head wood screw,GOST,GOST 1144-3
+(Type 4) Half — round head wood screw,GOST,GOST 1144-4
+Pan head screws type H cross recess,ISO,ISO 7045
+Countersunk flat head screws H cross r.,ISO,ISO 7046
+Raised countersunk head screws H cross r.,ISO,ISO 7047
+Cheese head screws with type H cross r.,ISO,ISO 7048
+UNC Round head square neck bolts,ASME,ASME B18.5.2
+Square head bolts with collar,DIN,DIN 478
+Mushroom head square neck bolts,DIN,DIN 603
+headless screws with shank,ISO,ISO 2342
+UNC Hexagon socket set screws with flat point,ASME,ASME B18.3.5A
+UNC Hexagon socket set screws with cone point,ASME,ASME B18.3.5B
+UNC Hexagon socket set screws with dog point,ASME,ASME B18.3.5C
+UNC Hexagon socket set screws with cup point,ASME,ASME B18.3.5D
+Hexagon socket set screws with flat point,ISO,ISO 4026
+Hexagon socket set screws with cone point,ISO,ISO 4027
+Hexagon socket set screws with dog point,ISO,ISO 4028
+Hexagon socket set screws with cup point,ISO,ISO 4029
+Slotted socket set screws with flat point,ISO,ISO 4766
+Slotted socket set screws with cone point,ISO,ISO 7434
+Slotted socket set screws with long dog point,ISO,ISO 7435
+Slotted socket set screws with cup point,ISO,ISO 7436
+"Knurled thumb screws, high type",DIN,DIN 464
+"Slotted knurled thumb screws, high type",DIN,DIN 465
+"Knurled thumb screws, low type",DIN,DIN 653
+round plate ground screw,other,GroundScrew
+GN 505.4 Serrated T-Slot Bolts,GN,GN 505.4

@@ -28,6 +28,10 @@
 from screw_maker import *
 import math
 import FastenerBase
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
 
 
 def makeHexNutSpherical(self, fa):
@@ -38,6 +42,13 @@ def makeHexNutSpherical(self, fa):
 
     dia = self.getDia(fa.calc_diam, True)
     P, d1, d5, damax, m, s, r, csh_diam = fa.dimTable
+    if _TMI is not None:
+        try:
+            _p_sel = _TMI.resolve_nut_pitch(fa)
+            if _p_sel and _p_sel > 0:
+                P = _p_sel
+        except Exception:
+            pass
 
     da = (damax + dia) / 2.
     tan30 = math.tan(math.radians(30.))
@@ -77,8 +88,22 @@ def makeHexNutSpherical(self, fa):
 
     # add modeled threads if necessary
     if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + P)
-        nut_body = nut_body.cut(thread_cutter)
+        if _TMI is not None:
+            try:
+                nut_body = _TMI.cut_internal_thread(nut_body, fa, dia, m)
+            except Exception as ex:
+                FreeCAD.Console.PrintLog(
+                    f"[FSmakeHexNutSpherical] metric thread sweep failed for "
+                    f"{fa.baseType} {fa.calc_diam}, falling back to legacy "
+                    f"thread cutter: {ex}\n"
+                )
+                thread_dia = dia + 0.05 * P
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+                nut_body = nut_body.cut(thread_cutter)
+        else:
+            thread_dia = dia + 0.05 * P
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            nut_body = nut_body.cut(thread_cutter)
 
     nut_body.translate(Base.Vector(0., 0., -hZ))
     # incorporate placement into shape and reset placement

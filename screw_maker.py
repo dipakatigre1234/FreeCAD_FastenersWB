@@ -564,7 +564,47 @@ class Screw:
         - m: Functional outer diameter of the recess.
              This also affects the overall height of the resulting shape.
         """
-        b, e_mean, g, f_mean, r, t1, alpha, beta = FsData["iso4757def"][CrossType]
+        # ── Normalise CrossType ───────────────────────────────────────────────
+        # Unwrap single-element container (e.g. (3,) from secondary lookup tables)
+        if isinstance(CrossType, (list, tuple)):
+            CrossType = CrossType[0]
+        # Convert to plain int, tolerating float ("3.0") or str ("3") forms
+        try:
+            ct_int = int(CrossType)
+        except (ValueError, TypeError):
+            try:
+                ct_int = int(float(str(CrossType).strip()))
+            except Exception:
+                raise ValueError(
+                    f"makeHCrossRecess: cannot interpret CrossType={CrossType!r} as an integer"
+                )
+        # iso4757def may use int keys OR str keys — try both
+        iso_data = FsData["iso4757def"]
+        if ct_int in iso_data:
+            key = ct_int
+        elif str(ct_int) in iso_data:
+            key = str(ct_int)
+        else:
+            numeric_keys = []
+            for k in iso_data.keys():
+                try:
+                    numeric_keys.append(int(k))
+                except (ValueError, TypeError):
+                    pass
+            if numeric_keys and ct_int > max(numeric_keys):
+                fallback = max(numeric_keys)
+                key = fallback if fallback in iso_data else str(fallback)
+                FreeCAD.Console.PrintWarning(
+                    f"makeHCrossRecess: CrossType {ct_int} not found in "
+                    f"iso4757def; using largest available type {fallback}\n"
+                )
+            else:
+                raise KeyError(
+                    f"makeHCrossRecess: CrossType {ct_int} not found in iso4757def "
+                    f"(available keys: {list(iso_data.keys())})"
+                )
+        b, e_mean, g, f_mean, r, t1, alpha, beta = iso_data[key]
+        # ─────────────────────────────────────────────────────────────────────
 
         rad265 = math.radians(26.5)
         rad28 = math.radians(28.0)
@@ -664,30 +704,56 @@ class Screw:
             recess = recess.fuse(cone2)
         return Part.Solid(recess)
 
+    # -------------------------------------------------------------------------
+    # Hexalobular (Torx) recess geometry
+    #
+    # Two public entry points share one private geometry core:
+    #   makeHexalobularRecess()      – ISO 10664  (reads "iso10664def")
+    #   makeHexalobularRecessASME()  – ASME B18.6.3 (reads "asmeb18_6_3_torxdef")
+    #   makeHexalobularRecessByStd() – dispatcher; choose standard at call site
+    #
+    # The column layout of both CSVs is identical: DriveSize, A, B, Re
+    # so the geometry formula is shared without modification.
+    # -------------------------------------------------------------------------
+
     @staticmethod
-    def makeHexalobularRecess(
-        drive_size: str, depth: float, chamfer: bool
+    def _makeHexalobularRecessFromABRe(
+        A: float, B: float, Re: float,
+        depth: float, chamfer: bool
     ) -> Part.Shape:
-        """create an ISO 10664 Hexalobular internal driving feature for bolts and screws
-        Parameters:
-        - drive_size: e.g: "T20", "T100", etc.
-        - depth: usable depth of the recess. the returned shape has a larger overall
-          height due to a tapered point at the bottom
-        - chamfer: if True, a chamfer is added at the top part of the shape
+        """Private geometry core for a hexalobular (Torx) recess.
+
+        Computes the 6-lobe profile from the three characteristic dimensions
+        A (outer circle diameter), B (inner circle diameter), and Re (lobe
+        radius) and extrudes a solid cutting tool of the requested depth.
+
+        This method is standard-agnostic; callers supply pre-loaded A/B/Re
+        values from whichever CSV (ISO 10664 or ASME B18.6.3) they choose.
+
+        Parameters
+        ----------
+        A      : outer lobe diameter  [mm]
+        B      : inner lobe diameter  [mm]
+        Re     : lobe arc radius      [mm]
+        depth  : usable recess depth  [mm]  (returned solid is taller due to
+                 tapered tip)
+        chamfer: add 18° entry chamfer at the top face when True
         """
-        A, B, Re = FsData["iso10664def"][drive_size]
+        # --- derived geometry ------------------------------------------------
         Ri = -((B + sqrt3 * (2. * Re - A)) * B + (A - 4. * Re) * A) / \
             (4. * B - 2. * sqrt3 * A + (4. * sqrt3 - 8.) * Re)
         beta = math.acos(A / (4 * Ri + 4 * Re) - (2 * Re) /
-                        (4 * Ri + 4 * Re)) - math.pi / 6
+                         (4 * Ri + 4 * Re)) - math.pi / 6
         Re_x = A / 2.0 - Re + Re * math.sin(beta)
         Re_y = Re * math.cos(beta)
         Ri_y = B / 4.0
         Ri_x = sqrt3 * B / 4.0
+
         mhex = Base.Matrix()
         mhex.rotateZ(math.radians(60.0))
         hexlobWireList = []
 
+        # --- build 6-lobe wire at z = depth ----------------------------------
         PntRe0 = Base.Vector(Re_x, -Re_y, depth)
         PntRe1 = Base.Vector(A / 2.0, 0.0, depth)
         PntRe2 = Base.Vector(Re_x, Re_y, depth)
@@ -711,13 +777,12 @@ class Screw:
             else:
                 edge1 = Part.Arc(PntRe2, PntRi, PntRi2).toShape()
             hexlobWireList.append(edge1)
-        hexlobWire = Part.Wire(hexlobWireList)
 
+        hexlobWire = Part.Wire(hexlobWireList)
         face = Part.Face(hexlobWire)
 
-        # Extrude in z to create the cutting tool for the screw-head-face
+        # --- extrude + taper cone --------------------------------------------
         prism = face.extrude(Base.Vector(0.0, 0.0, -3 * depth))
-        # add chamfers to surfaces
         width = sqrt3 * A / 2
         cone1 = Part.makeCone(
             (3 * depth + width) / sqrt3 + depth * sqrt3,
@@ -728,8 +793,21 @@ class Screw:
             360
         )
         recess = prism.common(cone1)
+
+        # --- optional entry chamfer ------------------------------------------
         if chamfer:
-            # 18 degree chamfer at top of recess cutter
+            # 18-degree entry chamfer — exact original proven formula.
+            #
+            # The cone is placed at z=depth (top of lobe wire), direction -Z.
+            # It is very wide at z=depth (above head, in air) and narrows
+            # going down. By z=0 (head face, local) its radius = 0.505*A,
+            # which is 0.005*A wider than the lobe outer edge A/2 — just
+            # enough overlap for a clean fuse with no zero-thickness face.
+            # Below z=0 it continues narrowing into the recess.
+            #
+            # This formula is used verbatim for both ISO and ASME since A and B
+            # are already loaded from the correct standard table by the caller
+            # (iso10664def for ISO, asmeb18_6_3_torxdef for ASME).
             cone2 = Part.makeCone(
                 0.505 * A + depth / math.tan(math.radians(18)),
                 0.49 * B,
@@ -739,12 +817,90 @@ class Screw:
                 360
             )
             recess = recess.fuse(cone2).removeSplitter()
+
         return Part.Solid(recess)
+
+    @staticmethod
+    def makeHexalobularRecess(
+        drive_size: str, depth: float, chamfer: bool
+    ) -> Part.Shape:
+        """ISO 10664 hexalobular internal driving feature.
+
+        Dimensions are loaded from the ``iso10664def`` table registered in
+        ``FastenerBase.FsData``.  The CSV columns must be: DriveSize, A, B, Re.
+
+        Parameters
+        ----------
+        drive_size : Torx size string, e.g. ``"T20"``, ``"T100"``
+        depth      : usable recess depth [mm]
+        chamfer    : add 18° entry chamfer when ``True``
+        """
+        A, B, Re = FsData["iso10664def"][drive_size]
+        return Screw._makeHexalobularRecessFromABRe(A, B, Re, depth, chamfer)
+
+    @staticmethod
+    def makeHexalobularRecessASME(
+        drive_size: str, depth: float, chamfer: bool
+    ) -> Part.Shape:
+        """ASME B18.6.3 hexalobular (Torx) internal driving feature.
+
+        Dimensions are loaded from the ``asmeb18_6_3_torxdef`` table registered in
+        ``FastenerBase.FsData``.  The CSV columns must be: DriveSize, A, B, Re
+        — the same layout as the ISO 10664 CSV so the geometry core is shared.
+
+        Parameters
+        ----------
+        drive_size : Torx size string, e.g. ``"T20"``, ``"T100"``
+        depth      : usable recess depth [mm]
+        chamfer    : add 18° entry chamfer when ``True``
+        """
+        A, B, Re = FsData["asmeb18_6_3_torxdef"][drive_size]
+        return Screw._makeHexalobularRecessFromABRe(A, B, Re, depth, chamfer)
+
+    @staticmethod
+    def makeHexalobularRecessByStd(
+        standard: str, drive_size: str, depth: float, chamfer: bool
+    ) -> Part.Shape:
+        """Dispatcher: select ISO 10664 or ASME B18.6.3 at call time.
+
+        Parameters
+        ----------
+        standard   : ``"ISO"`` → ISO 10664,  ``"ASME"`` → ASME B18.6.3
+        drive_size : Torx size string, e.g. ``"T20"``
+        depth      : usable recess depth [mm]
+        chamfer    : add 18° entry chamfer when ``True``
+
+        Raises
+        ------
+        ValueError
+            If *standard* is not ``"ISO"`` or ``"ASME"``.
+
+        Example
+        -------
+        ::
+
+            # ISO recess for a T25 drive, 3 mm deep with chamfer
+            shape = Screw.makeHexalobularRecessByStd("ISO",  "T25", 3.0, True)
+
+            # ASME recess for the same drive size
+            shape = Screw.makeHexalobularRecessByStd("ASME", "T25", 3.0, True)
+        """
+        std = standard.upper().strip()
+        if std == "ISO":
+            return Screw.makeHexalobularRecess(drive_size, depth, chamfer)
+        elif std == "ASME":
+            return Screw.makeHexalobularRecessASME(drive_size, depth, chamfer)
+        else:
+            raise ValueError(
+                f"makeHexalobularRecessByStd: unknown standard {standard!r}. "
+                "Use 'ISO' (ISO 10664) or 'ASME' (ASME B18.6.3)."
+            )
 
     @staticmethod
     def makeHexalobularrecess(
             drive_size: str, depth: float, chamfer: bool) -> "Part.Shape":
-        """Lowercase alias for backward compatibility with older FsFunctions."""
+        """Lowercase alias for backward compatibility with older FsFunctions.
+        Always uses ISO 10664 dimensions."""
         return Screw.makeHexalobularRecess(drive_size, depth, chamfer)
 
     @staticmethod

@@ -14,7 +14,7 @@ FSIconAliases = {
     'DIN84' : 'ISO1207',
     'DIN961' : 'ISO8676',
     'DIN933' : 'ISO4017',
-    'DIN934' : 'ISO4032',
+    'DIN934' : 'ISO4032', 
     'GOST11860-1' : 'DIN1587',
     'GOST1144-1' : 'DIN96',
     'GOST1144-2' : 'DIN96',
@@ -46,6 +46,7 @@ FSIconAliases = {
     'ISO12126' : 'ISO7044',
     'ISO15071' : 'EN1662',
     'ISO15072' : 'EN1662',
+    'ASMEB18.2.2.15' : 'DIN935C',
 }
 
 # a table to reuse similar type standards

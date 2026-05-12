@@ -35,7 +35,6 @@ import FSThreadingASME   as _TA
 import FSThreadingMetric as _TM
 
 
-
 def makeRoundHeadScrew(self, fa):
     """Create a screw with a round head
 
@@ -51,26 +50,34 @@ def makeRoundHeadScrew(self, fa):
     dia    = self.getDia(fa.calc_diam, False)
 
     # ── Unpack dimTable per screw type ────────────────────────────────────
+    # Current workspace data for ASME B18.6.3.16 uses the compact form:
+    #   P [mm], A [in], H [in], J [in], T [in]
+    # Use those values directly for the round-head envelope.
     if SType == "ASMEB18.6.3.16A":
-        # CSV cols (inches): P, A_max, A_min, O_max, O_min, F_max, F_min, J_max, J_min, T_max, T_min, U_max, U_min, X_max, X_min
-        P_tbl, A_max, A_min, O_max, O_min, F_max, F_min, J_max, J_min, T_max, T_min, U_max, U_min, X_max, X_min = fa.dimTable
-        A  = (A_max + A_min) / 2 * 25.4
-        H  = (O_max + O_min) / 2 * 25.4   # O = overall height
-        J  = J_max * 25.4
-        T  = T_max * 25.4
+        P_tbl, A, H, J, T = fa.dimTable
+        A *= 25.4
+        H *= 25.4
+        J *= 25.4
+        T *= 25.4
         recess = self.makeSlotRecess(J, T, A)
+        # makeSlotRecess already extends one depth below its reference plane.
+        # Place that reference plane at the head apex so the effective slot
+        # depth remains T, not 2*T.
         recess.translate(Base.Vector(0.0, 0.0, H))
         b_tbl = 1.5 * 25.4      # max threaded length per para 2.4.1(b)
 
     elif SType == "ASMEB18.6.3.16B":
-        # CSV cols (inches): P, A_max, A_min, O_max, O_min, F_max, F_min, Driver, M_ref, P_max, P_min
-        P_tbl, A_max, A_min, O_max, O_min, F_max, F_min, Driver, M_ref, P_max, P_min = fa.dimTable
+        P_tbl, A, H, _J, _T = fa.dimTable
+        A *= 25.4
+        H *= 25.4
+        # Compact 16A/16B file stores the common round-head envelope.
+        # The cross recess specifics still come from the 16B extra table.
         mH, cT = FsData["ASMEB18.6.3.16Bextra"][fa.calc_diam]
-        A  = (A_max + A_min) / 2 * 25.4
-        H  = (O_max + O_min) / 2 * 25.4
         mH = mH * 25.4
         recess = self.makeHCrossRecess(cT, mH)
-        recess.translate(Base.Vector(0.0, 0.0, H))
+        # makeHCrossRecess extends up to z=mH/4; sink it so the top of the
+        # recess is flush with the round-head apex.
+        recess.translate(Base.Vector(0.0, 0.0, H - mH / 4.0))
         b_tbl = 1.5 * 25.4      # max threaded length per para 2.4.1(b)
 
     else:

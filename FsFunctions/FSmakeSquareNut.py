@@ -26,6 +26,18 @@
 """
 from screw_maker import *
 import FastenerBase
+import sys as _sys_nut, os as _os_nut
+_wb_nut = _os_nut.path.dirname(_os_nut.path.dirname(_os_nut.path.abspath(__file__)))
+if _wb_nut not in _sys_nut.path:
+    _sys_nut.path.insert(0, _wb_nut)
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
+try:
+    import FSThreadingASMEInternal as _TAI
+except Exception:
+    _TAI = None
 
 
 def makeSquareNut(self, fa):
@@ -39,6 +51,7 @@ def makeSquareNut(self, fa):
     """
     SType = fa.baseType
     dia = self.getDia(fa.calc_diam, True)
+    is_asme = SType.startswith("ASME")
     if SType == 'DIN557':
         s, m, di, dw, P = fa.dimTable
         top_chamfer = True
@@ -51,7 +64,7 @@ def makeSquareNut(self, fa):
         m = (m_max + m_min) / 2
         s = (s_max + s_min) / 2
         top_chamfer = False
-    elif SType == "ASMEB18.2.2.2":
+    elif SType == "ASMEB18.2.2.3":
         # CSV columns: TPI, F_max, F_min, H_max, H_min (inches)
         TPI, F_max, F_min, H_max, H_min = fa.dimTable
         P = 1 / TPI * 25.4
@@ -59,11 +72,63 @@ def makeSquareNut(self, fa):
         dw = s
         m = ((H_max + H_min) / 2) * 25.4
         top_chamfer = True
+
+    # Resolve pitch from dashboard properties when available.
+    if not is_asme and _TMI is not None:
+        _p_nut_s = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+        if _p_nut_s:
+            try:
+                P = float(_p_nut_s)
+            except Exception:
+                pass
+        elif getattr(fa, "calc_pitch", None) is not None and fa.calc_pitch > 0.0:
+            P = fa.calc_pitch
+    else:
+        if getattr(fa, "calc_pitch", None) is not None and fa.calc_pitch > 0.0:
+            P = fa.calc_pitch
+        if is_asme and _TAI is not None:
+            try:
+                _eff_tpi_resolved = _TAI.resolve_nut_tpi(fa)
+                if _eff_tpi_resolved and _eff_tpi_resolved > 0:
+                    P = 25.4 / _eff_tpi_resolved
+            except Exception:
+                pass
+
     # create the nut body using a recantular prism primitive
     nut = Part.makeBox(s, s, m, Base.Vector(-s / 2, -s / 2, 0.0))
     # subtract the internal bore from the nut using a revolved solid
     do = dia * 1.1
-    inner_rad = dia / 2 - P * 0.625 * sqrt3 / 2
+    _bore_r = None
+    if not is_asme and _TMI is not None:
+        try:
+            _dia_s = str(getattr(fa, "calc_diam", "") or "")
+            _p_s = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
+            _cls_s = str(getattr(fa, "Thread_Class_Nut", "") or "6H")
+            if not _p_s:
+                _p_mm = _TMI.resolve_nut_pitch(fa)
+                _p_s = str(_p_mm) if _p_mm else ""
+            if _p_s:
+                _bore_r = _TMI.bore_dia_from_table(fa, _dia_s, _p_s, _cls_s) / 2.0
+        except Exception:
+            _bore_r = None
+    elif is_asme and _TAI is not None:
+        try:
+            _dia_s_a = str(getattr(fa, "calc_diam", "") or "")
+            _tpi_prop = str(getattr(fa, "Thread_TPI_Nut", "") or "")
+            _type_s_a = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+            _cls_s_a = str(getattr(fa, "Thread_Class_Nut_ASME", "2B") or "2B")
+            if not _tpi_prop:
+                _tpi_val_a = _TAI.resolve_nut_tpi(fa)
+                _tpi_prop = str(_tpi_val_a) if _tpi_val_a else ""
+            if _tpi_prop:
+                _bore_r = _TAI.bore_dia_from_table(
+                    fa, _dia_s_a, _tpi_prop, _type_s_a, _cls_s_a) / 2.0
+        except Exception:
+            _bore_r = None
+    if _bore_r is None:
+        _bore_r = dia / 2 - P * 0.625 * sqrt3 / 2
+
+    inner_rad = _bore_r
     inner_cham_ht = tan15 * (do / 2 - inner_rad)
     fm = FastenerBase.FSFaceMaker()
     fm.AddPoint(0.0, 0.0)
@@ -80,6 +145,49 @@ def makeSquareNut(self, fa):
         nut = nut.common(cham_solid)
     # cut modeled threads if needed
     if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, m + P)
-        nut = nut.cut(thread_cutter)
+        if is_asme:
+            _eff_tpi_c = None
+            if _TAI is not None:
+                try:
+                    _eff_tpi_c = _TAI.resolve_nut_tpi(fa)
+                except Exception:
+                    pass
+            if not _eff_tpi_c or _eff_tpi_c <= 0:
+                _eff_tpi_c = 25.4 / P if P > 0 else 8.0
+            _p_thread = 25.4 / _eff_tpi_c if _eff_tpi_c > 0 else P
+            # Ensure ASME bore follows class/type/TPI before thread cut.
+            if _TAI is not None:
+                try:
+                    _dia_s = str(getattr(fa, "calc_diam", "") or "")
+                    _tpi_s = str(getattr(fa, "Thread_TPI_Nut", "") or "")
+                    _type_s = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+                    _cls_s = str(getattr(fa, "Thread_Class_Nut_ASME", "2B") or "2B")
+                    if (_tpi_s == "Custom" or not _tpi_s):
+                        _tpi_s = str(_eff_tpi_c)
+                    _bore_eff = _TAI.bore_dia_from_table(fa, _dia_s, _tpi_s, _type_s, _cls_s)
+                    bore_cyl = Part.makeCylinder(
+                        _bore_eff / 2.0,
+                        m + 2.0 * _p_thread,
+                        Base.Vector(0.0, 0.0, -_p_thread),
+                        Base.Vector(0, 0, 1),
+                    )
+                    nut = nut.cut(bore_cyl)
+                except Exception:
+                    pass
+            thread_dia = dia + 0.05 / _eff_tpi_c
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, _p_thread, m + _p_thread)
+            nut = nut.cut(thread_cutter)
+        else:
+            # Full-depth metric thread cut driven by dashboard pitch/class.
+            if _TMI is not None:
+                try:
+                    nut = _TMI.cut_internal_thread(nut, fa, dia, m)
+                except Exception:
+                    thread_dia = dia + 0.05 * P
+                    thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+                    nut = nut.cut(thread_cutter)
+            else:
+                thread_dia = dia + 0.05 * P
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+                nut = nut.cut(thread_cutter)
     return nut

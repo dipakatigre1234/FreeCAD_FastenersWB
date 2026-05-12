@@ -245,6 +245,7 @@ screwTables = {
     "DIN6319D": ("Washer", "makeSphericalWasher"),
     "DIN6319G": ("Washer", "makeSphericalWasher"),
     "DIN6340": ("Washer", "makeWasher"),
+    "DIN6796": ("Washer", "makeWasher"),
     "NFE27-619": ("Washer", "makeWasher"),
     "ISO4026": ("Screw", "makeSetScrew"),
     "ISO4027": ("Screw", "makeSetScrew"),

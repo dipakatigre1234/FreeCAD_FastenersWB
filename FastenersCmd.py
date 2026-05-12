@@ -120,6 +120,9 @@ WasherParameters = {"Type", "Diameter", "MatchOuter"}
 PCBStandoffParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                          "LeftHanded", "Thread_Length", "LenByDiamAndWidth", "LengthCustom", "widthCode",
                          "TPitch", "TLength", "TThread"}
+BellevilleWasherParameters = {"Type", "Diameter", "MatchOuter",
+                              "DiameterCustom", "WasherOuterDiaCustom",
+                              "WasherThicknessCustom", "WasherHeightCustom"}
 PCBSpacerParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                        "LeftHanded", "LenByDiamAndWidth", "LengthCustom", "widthCode"}
 PEMPressNutParameters = {"Type", "Diameter",
@@ -350,6 +353,7 @@ FSScrewCommandTable = {
     "DIN6319D": (translate("FastenerCmd", "Conical seat"), WasherGroup, WasherParameters),
     "DIN6319G": (translate("FastenerCmd", "Conical seat"), WasherGroup, WasherParameters),
     "DIN6340":  (translate("FastenerCmd", "Washers for clamping devices"), WasherGroup, WasherParameters),
+    "DIN6796":  (translate("FastenerCmd", "Belleville conical spring washer"), WasherGroup, BellevilleWasherParameters),
     "ISO7089":  (translate("FastenerCmd", "Plain washers - Normal series"), WasherGroup, WasherParameters),
     "ISO7090":  (translate("FastenerCmd", "Plain Washers, chamfered - Normal series"), WasherGroup, WasherParameters),
     "ISO7092":  (translate("FastenerCmd", "Plain washers - Small series"), WasherGroup, WasherParameters),
@@ -1012,6 +1016,15 @@ class FSScrewObject(FSBaseObject):
         if "DiameterCustom" in params and not hasattr(obj,"DiameterCustom"):
             obj.addProperty("App::PropertyLength","DiameterCustom","Parameters",
                 translate("FastenerCmd","Screw major diameter custom")).DiameterCustom = 6
+        if "WasherOuterDiaCustom" in params and not hasattr(obj,"WasherOuterDiaCustom"):
+            obj.addProperty("App::PropertyLength","WasherOuterDiaCustom","Parameters",
+                translate("FastenerCmd","Washer outer diameter (custom)")).WasherOuterDiaCustom = 12
+        if "WasherThicknessCustom" in params and not hasattr(obj,"WasherThicknessCustom"):
+            obj.addProperty("App::PropertyLength","WasherThicknessCustom","Parameters",
+                translate("FastenerCmd","Washer thickness (custom)")).WasherThicknessCustom = 1.5
+        if "WasherHeightCustom" in params and not hasattr(obj,"WasherHeightCustom"):
+            obj.addProperty("App::PropertyLength","WasherHeightCustom","Parameters",
+                translate("FastenerCmd","Belleville washer free height (custom)")).WasherHeightCustom = 2.0
         if "PitchCustom" in params and not hasattr(obj,"PitchCustom"):
             obj.addProperty("App::PropertyLength","PitchCustom","Parameters",
                 translate("FastenerCmd","Screw pitch custom")).PitchCustom = 1.0

@@ -330,6 +330,8 @@ def bore_dia_from_table(fa, dia_str, tpi, series_str, cls_str):
     deviation = minor_mm * pct / 100.0
     bore_eff  = minor_mm + deviation
 
+    max_major_dia = 1.005 * dia_mm
+
     try:
         import FreeCAD as _FC
         _FC.Console.PrintMessage(
@@ -337,6 +339,7 @@ def bore_dia_from_table(fa, dia_str, tpi, series_str, cls_str):
             f"  Minor_Dia_Max  (CSV) = {minor_mm:.5f} mm\n"
             f"  deviation pct        = {pct:.4f} %\n"
             f"  deviation_mm         = {deviation:.5f} mm\n"
+            f"  max_major_dia        = {max_major_dia:.5f} mm\n"
             f"  bore_eff             = {bore_eff:.5f} mm"
             f"  (bore radius = {bore_eff / 2:.5f} mm)\n"
         )

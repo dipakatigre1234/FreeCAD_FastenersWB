@@ -341,7 +341,10 @@ class FSFaceMaker:
         if self.firstPoint is None:
             self.firstPoint = curPoint
         else:
-            self.edges.append(Part.makeLine(self.lastPoint, curPoint))
+            # Guard against zero-length edges (common when chamfer height is 0)
+            # which otherwise trigger OCCError: "Line through identical points".
+            if (curPoint.sub(self.lastPoint)).Length > 1e-9:
+                self.edges.append(Part.makeLine(self.lastPoint, curPoint))
         self.lastPoint = curPoint
         # FreeCAD.Console.PrintLog("Add Point: " + str(curPoint) + "\n")
 
@@ -352,7 +355,8 @@ class FSFaceMaker:
             return
         else:
             curPoint = self.lastPoint + FreeCAD.Base.Vector(dx, 0, dz)
-            self.edges.append(Part.makeLine(self.lastPoint, curPoint))
+            if (curPoint.sub(self.lastPoint)).Length > 1e-9:
+                self.edges.append(Part.makeLine(self.lastPoint, curPoint))
             self.lastPoint = curPoint
         # FreeCAD.Console.PrintLog("Add Point Rel: " + str(curPoint) + "\n")
 

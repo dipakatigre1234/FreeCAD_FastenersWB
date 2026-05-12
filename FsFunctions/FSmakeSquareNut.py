@@ -154,12 +154,40 @@ def makeSquareNut(self, fa):
                     pass
             if not _eff_tpi_c or _eff_tpi_c <= 0:
                 _eff_tpi_c = 25.4 / P if P > 0 else 8.0
+            _p_thread = 25.4 / _eff_tpi_c if _eff_tpi_c > 0 else P
+            # Ensure ASME bore follows class/type/TPI before thread cut.
+            if _TAI is not None:
+                try:
+                    _dia_s = str(getattr(fa, "calc_diam", "") or "")
+                    _tpi_s = str(getattr(fa, "Thread_TPI_Nut", "") or "")
+                    _type_s = str(getattr(fa, "Thread_Type_Nut", "UNC") or "UNC")
+                    _cls_s = str(getattr(fa, "Thread_Class_Nut_ASME", "2B") or "2B")
+                    if (_tpi_s == "Custom" or not _tpi_s):
+                        _tpi_s = str(_eff_tpi_c)
+                    _bore_eff = _TAI.bore_dia_from_table(fa, _dia_s, _tpi_s, _type_s, _cls_s)
+                    bore_cyl = Part.makeCylinder(
+                        _bore_eff / 2.0,
+                        m + 2.0 * _p_thread,
+                        Base.Vector(0.0, 0.0, -_p_thread),
+                        Base.Vector(0, 0, 1),
+                    )
+                    nut = nut.cut(bore_cyl)
+                except Exception:
+                    pass
             thread_dia = dia + 0.05 / _eff_tpi_c
-            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, _p_thread, m + _p_thread)
             nut = nut.cut(thread_cutter)
-        elif _TMI is not None:
-            nut = _TMI.cut_internal_thread(nut, fa, dia, m, P)
         else:
-            thread_cutter = self.CreateInnerThreadCutter(dia + 0.05 * P, P, m + P)
-            nut = nut.cut(thread_cutter)
+            # Full-depth metric thread cut driven by dashboard pitch/class.
+            if _TMI is not None:
+                try:
+                    nut = _TMI.cut_internal_thread(nut, fa, dia, m)
+                except Exception:
+                    thread_dia = dia + 0.05 * P
+                    thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+                    nut = nut.cut(thread_cutter)
+            else:
+                thread_dia = dia + 0.05 * P
+                thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+                nut = nut.cut(thread_cutter)
     return nut

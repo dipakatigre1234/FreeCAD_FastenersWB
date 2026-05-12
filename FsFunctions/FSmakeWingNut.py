@@ -5,14 +5,9 @@ import sys as _sys_wn, os as _os_wn
 _wb_wn = _os_wn.path.dirname(_os_wn.path.dirname(_os_wn.path.abspath(__file__)))
 if _wb_wn not in _sys_wn.path:
     _sys_wn.path.insert(0, _wb_wn)
-try:
-    import FSThreadingMetricInternal as _TMI
-except Exception:
-    _TMI = None
-try:
-    import FSThreadingASMEInternal as _TAI
-except Exception:
-    _TAI = None
+import FSThreadingMetricInternal as _TMI
+import FSThreadingASMEInternal as _TAI
+
 
 
 def makeWingNut(self, fa):
@@ -123,7 +118,8 @@ def makeWingNut(self, fa):
                 try: tpi = _TAI.resolve_nut_tpi(fa)
                 except: pass
             tpi = tpi if (tpi and tpi > 0) else (25.4/P if P > 0 else 8.0)
-            shape = shape.cut(self.CreateInnerThreadCutter(dia + 0.05/tpi, P, m + P))
+            p_thread = 25.4 / tpi if tpi > 0 else P
+            shape = shape.cut(self.CreateInnerThreadCutter(dia + 0.05/tpi, p_thread, m + p_thread))
         else:
             # DIN315: use 'do' (actual bore dia) so cutter matches the drilled hole.
             # Offset by inner_cham_ht to cut only the cylindrical bore section.

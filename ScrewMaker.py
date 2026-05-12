@@ -293,7 +293,8 @@ screwTables = {
     "DIN562": ("Nut", "makeSquareNut"),
     "DIN928": ("Nut", "makeWeldNut"),
     "DIN929": ("Nut", "makeWeldNut"),
-    "DIN935": ("Nut", "makeCastleNut"),
+    "DIN935":  ("Nut", "makeSlottedNut"),
+    "DIN935C": ("Nut", "makeCastleNut"),
     "DIN985": ("Nut", "makeNylocNut"),
     "DIN508": ("TSlot", "makeTSlot"),
     "4PWTI": ("Nut", "makeTeeNut"),
@@ -316,8 +317,9 @@ screwTables = {
     "ASMEB18.2.2.5B": ("Nut", "makeHexNut"),      # Hex Jam Nuts (Table 5B)
     "ASMEB18.2.2.11A": ("Nut", "makeHexNut"),     # Heavy Hex Nut (Table 11)
     "ASMEB18.2.2.11B": ("Nut", "makeHexNut"),     # Heavy Hex Jam Nut (Table 11)
-    "ASMEB18.2.2.6": ("Nut", "makeCastleNut"),    # Hex Slotted Thin Nuts (Table 6)
-    "ASMEB18.2.2.8": ("Nut", "makeCastleNut"),    # Hex Slotted Wide Nuts (Table 8)
+    "ASMEB18.2.2.6": ("Nut", "makeSlottedNut"),    # Hex Slotted Thin Nuts (Table 6)
+    "ASMEB18.2.2.8": ("Nut", "makeSlottedNut"),    # Hex Slotted Wide Nuts (Table 8)
+    "ASMEB18.2.2.15": ("Nut", "makeCastleNut"),    # Hex Castle Nuts (Table 15)
     "ASMEB18.2.2.13A": ("Nut", "makeHexNutWFlange"),  # Hex Flange Nuts (Table 13A)
     "ASMEB18.2.2.13B": ("Nut", "makeHexNutWFlange"),  # Large Hex Flange Nuts (Table 13B)
     "ASMEB18.2.2.14": ("Nut", "makeHexNut"),      # Hex Coupling Nuts (Table 14)
@@ -458,6 +460,41 @@ def _normalize_fsdata_keys():
             f"with tuple keys\n"
         )
 
+def _derive_castle_table():
+    """Derive DIN935Cdef from DIN935def -- castle nut sizes only (d_e_max != "None").
+
+    DIN935def.csv has all sizes M4-M100. Sizes M4-M10 have d_e_max="None"
+    (slotted nut only). Sizes M12+ have numeric d_e_max (castle nut crown OD).
+
+    This creates FsData["DIN935Cdef"] containing only the M12+ rows so that
+    DIN935C gets a filtered diameter dropdown. Must run at startup before
+    any GetAllDiams() call -- that is why it lives here, not in the lazily-
+    imported FSmakeCastleNut.py.
+    """
+    src = FsData.get("DIN935def")
+    if src is None:
+        return
+    if "DIN935Cdef" in FsData:
+        return
+
+    castle = {}
+    # dimTable tuple index 5 = d_e_max: (P, m, w, s, n, d_e_max, ns)
+    for dia, vals in src.items():
+        try:
+            d_e = vals[5]
+        except (IndexError, TypeError):
+            continue
+        if d_e == "None" or d_e is None:
+            continue
+        castle[dia] = vals
+
+    if castle:
+        FsData["DIN935Cdef"] = castle
+        FreeCAD.Console.PrintLog(
+            f"[ScrewMaker] _derive_castle_table: created DIN935Cdef "
+            f"with {len(castle)} sizes from DIN935def\n"
+        )
+
 
 class FSScrewMaker(Screw):
     def __init__(self):
@@ -465,6 +502,7 @@ class FSScrewMaker(Screw):
         # Normalize any tuple keys produced by the CSV parser for ASME types.
         # Must be called AFTER super().__init__() has finished populating FsData.
         _normalize_fsdata_keys()
+        _derive_castle_table()
 
     def FindClosest(self, type, diam, len, width=None):
         """Find closest standard screw to given parameters"""

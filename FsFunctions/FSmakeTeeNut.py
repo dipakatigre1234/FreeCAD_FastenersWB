@@ -26,6 +26,10 @@
 """
 
 from screw_maker import *
+try:
+    import FSThreadingMetricInternal as _TMI
+except Exception:
+    _TMI = None
 
 
 def makeTeeNut(self, fa):
@@ -88,6 +92,9 @@ def makeTeeNut(self, fa):
         shape = shape.fuse(barb_shape)
     # add modelled threads if needed
     if fa.Thread:
-        thread_cutter = self.CreateInnerThreadCutter(dia, P, l1 + P)
-        shape = shape.cut(thread_cutter)
+        if _TMI is not None:
+            shape = _TMI.cut_internal_thread(shape, fa, dia, l1)
+        else:
+            thread_cutter = self.CreateInnerThreadCutter(dia, P, l1 + P)
+            shape = shape.cut(thread_cutter)
     return shape

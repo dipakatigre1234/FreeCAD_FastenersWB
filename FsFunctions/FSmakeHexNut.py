@@ -97,8 +97,91 @@ def makeHexNut(self, fa):
 
     # ── Unpack dimension table ────────────────────────────────────────────────
     if SType == "ISO7414":
-        # CSV columns: P, c, da, dw, e, m, mw, s_nom
-        P, _, da, _, e, m, _, s = fa.dimTable
+        # CSV columns (updated): P, c, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[2]
+        da_min = fa.dimTable[3]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[5]
+        m_max = fa.dimTable[6]
+        m_min = fa.dimTable[7]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[9]
+    elif SType == "ISO4032":
+        # CSV columns (updated): P, c, damax, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da = fa.dimTable[2]
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[8]
+    elif SType == "ISO4033":
+        # CSV columns (updated): P, c, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[2]
+        da_min = fa.dimTable[3]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[5]
+        m_max = fa.dimTable[6]
+        m_min = fa.dimTable[7]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[9]
+    elif SType == "ISO4034":
+        # CSV columns (updated): P, dw, e, m_max, m_min, mw, s_nom
+        # ISO4034 table does not provide da in this notation; use nominal
+        # thread diameter as a stable fallback for chamfer geometry.
+        P = fa.dimTable[0]
+        e = fa.dimTable[2]
+        m_max = fa.dimTable[3]
+        m_min = fa.dimTable[4]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[6]
+        da = dia
+    elif SType == "ISO4035":
+        # CSV columns (updated): P, da_max, da_min, dw, e, m_max, m_min, mw, s_nom
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[1]
+        da_min = fa.dimTable[2]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[8]
+    elif SType == "ISO8673":
+        # CSV columns (updated): P, c_max, c_min, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[3]
+        da_min = fa.dimTable[4]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[6]
+        m_max = fa.dimTable[7]
+        m_min = fa.dimTable[8]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[10] + fa.dimTable[11]) / 2
+    elif SType == "ISO8674":
+        # CSV columns (updated): P, c_max, c_min, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[3]
+        da_min = fa.dimTable[4]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[6]
+        m_max = fa.dimTable[7]
+        m_min = fa.dimTable[8]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[10] + fa.dimTable[11]) / 2
+    elif SType == "ISO8675":
+        # CSV columns (updated): P, da_max, da_min, dw, e, m_max, m_min, mw, s_max, s_min
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[1]
+        da_min = fa.dimTable[2]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = (fa.dimTable[8] + fa.dimTable[9]) / 2
     elif SType[:3] == 'ISO' or SType == "DIN934":
         P, _, da, _, e, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
@@ -288,8 +371,9 @@ def makeHexNut(self, fa):
                 _eff_tpi_c = eff_tpi
             if not _eff_tpi_c or _eff_tpi_c <= 0:
                 _eff_tpi_c = 25.4 / P if P > 0 else 8.0
+            _p_thread = 25.4 / _eff_tpi_c if _eff_tpi_c > 0 else P
             thread_dia = dia + 0.05 / _eff_tpi_c
-            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, m + P)
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, _p_thread, m + _p_thread)
             nut = nut.cut(thread_cutter)
         else:
             thread_dia    = dia + 0.05 * P

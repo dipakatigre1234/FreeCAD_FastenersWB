@@ -138,7 +138,7 @@ HexKeyParameters = {"Type", "Diameter", "MatchOuter", "KeySize"}
 NailParameters = {"Type", "Diameter", "MatchOuter"}
 FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Length',
                    'LengthCustom', 'Width', 'DiameterCustom', 'PitchCustom', 'Tcode',
-                   'Blind', 'ScrewLength', "SlotWidth", 'ExternalDiam', 'KeySize',
+                   'Blind', 'ScrewLength', "SlotWidth", 'ExternalDiam', 'KeySize', 'SecurityPin',
                    'ThreadPitch', 'Thread_TPI', 'Thread_Length', 'Thread_Type',
                    'Thread_Class', 'Thread_TPI', 'Thread_TPI_Custom',
                    # Metric data-driven thread properties (metric_thread_dia.csv)

@@ -336,11 +336,11 @@ class Screw:
         H = 0.9604939 * P  # Thread depth for 55° profile
         r = 0.1373292 * P  # Root radius
         rc = 0.108253 * P  # Crest radius
-
+        
         trotations = blen // P + 2
         helix_height = trotations * P
         dia2 = dia / 2
-
+        
         fm = FastenerBase.FSFaceMaker()
         # BSP thread profile points (55° angle with rounded roots for external cutter)
         # Point calculations based on tan(27.5°) = 0.520567
@@ -348,19 +348,19 @@ class Screw:
         fm.AddPoint(dia2 - 0.5664 * P, -0.1218 * P)
         fm.AddArc(dia2 - 0.6403 * P, 0, dia2 - 0.5664 * P, 0.1218 * P)
         fm.AddPoint(dia2 + 0.1121 * P, 0.475 * P)
-
+        
         thread_profile_wire = fm.GetClosedWire()
         thread_profile_wire.translate(Base.Vector(0, 0, -1 * helix_height))
-
+        
         # Create helix and sweep (similar to existing CreateThreadCutter)
         helix = Part.makeLongHelix(P, helix_height, dia / 2, 0, self.LeftHanded)
         helix.rotate(Base.Vector(0, 0, 0), Base.Vector(1, 0, 0), 180)
-
+        
         sweep = Part.BRepOffsetAPI.MakePipeShell(helix)
         sweep.setFrenetMode(True)
         sweep.setTransitionMode(1)
         sweep.add(thread_profile_wire)
-
+        
         if sweep.isReady():
             sweep.build()
             sweep.makeSolid()
@@ -376,19 +376,19 @@ class Screw:
         r = 0.1373292 * P
         rc = 0.108253 * P
         r_inner = dia / 2.0
-
+        
         helix = Part.makeLongHelix(P, blen, r_inner, 0, self.LeftHanded)
-
+        
         fm = FastenerBase.FSFaceMaker()
         # Internal BSP thread profile points (55° angle with rounded tip)
         fm.AddPoint(r_inner - 0.7524 * P, 0.475 * P)
         fm.AddPoint(r_inner - 0.0739 * P, 0.1218 * P)
         fm.AddArc(r_inner, 0, r_inner - 0.0739 * P, -0.1218 * P)
         fm.AddPoint(r_inner - 0.7524 * P, -0.475 * P)
-
+        
         W0 = fm.GetClosedWire()
         W0.translate(Base.Vector(0, 0, -P * 9.0 / 16.0))
-
+        
         makeSolid = True
         isFrenet = True
         cutTool = Part.Wire(helix).makePipeShell([W0], makeSolid, isFrenet)
@@ -556,49 +556,15 @@ class Screw:
         return solid
 
     @classmethod
-    def makeHCrossRecess(cls, CrossType, m: float) -> Part.Shape:
+    def makeHCrossRecess(cls, CrossType: str, m: float) -> Part.Shape:
         """Create a Cross recess of type H.
-        Oriented in the Z direction, with outer diameter m at Z=0.
-
+        Oriented in the Z direction , with outer diameter m at Z=0.
         Parameters:
-        - CrossType: cross-recess driver number.  Accepts int, float, str,
-                     or a single-element list/tuple (e.g. (3,) from CSV rows
-                     stored as tuples).  Valid values: 0–4.
+        - CrossType: "0", "1", "2", "3", and "4" are supported.
         - m: Functional outer diameter of the recess.
              This also affects the overall height of the resulting shape.
-
-        FIX: iso4757def may be keyed by either plain int (0..4) or by the
-        string equivalents ("0".."4") depending on how FastenerBase loaded
-        the CSV.  This method normalises CrossType and tries both forms so
-        that callers never need to worry about the storage type.
         """
-        # ── Normalise CrossType ───────────────────────────────────────────────
-        # Unwrap single-element container (e.g. (3,) from secondary lookup tables)
-        if isinstance(CrossType, (list, tuple)):
-            CrossType = CrossType[0]
-        # Convert to plain int, tolerating float ("3.0") or str ("3") forms
-        try:
-            ct_int = int(CrossType)
-        except (ValueError, TypeError):
-            try:
-                ct_int = int(float(str(CrossType).strip()))
-            except Exception:
-                raise ValueError(
-                    f"makeHCrossRecess: cannot interpret CrossType={CrossType!r} as an integer"
-                )
-        # iso4757def may use int keys OR str keys — try both
-        iso_data = FsData["iso4757def"]
-        if ct_int in iso_data:
-            key = ct_int
-        elif str(ct_int) in iso_data:
-            key = str(ct_int)
-        else:
-            raise KeyError(
-                f"makeHCrossRecess: CrossType {ct_int} not found in iso4757def "
-                f"(available keys: {list(iso_data.keys())})"
-            )
-        b, e_mean, g, f_mean, r, t1, alpha, beta = iso_data[key]
-        # ─────────────────────────────────────────────────────────────────────
+        b, e_mean, g, f_mean, r, t1, alpha, beta = FsData["iso4757def"][CrossType]
 
         rad265 = math.radians(26.5)
         rad28 = math.radians(28.0)
@@ -763,17 +729,11 @@ class Screw:
         )
         recess = prism.common(cone1)
         if chamfer:
-            # 18 degree chamfer at top of recess opening.
-            # The chamfer cone starts at A/2 (full outer lobe radius) at the top
-            # surface and tapers inward at 18° going downward into the recess.
-            chamfer_angle = math.radians(18)
-            r_top = A / 2.0          # outer edge = full hexalobular outer radius
-            chamfer_h = 0.3 * A      # chamfer depth ≈ 30% of outer dia (visible bevel)
-            r_bot = r_top - chamfer_h * math.tan(chamfer_angle)
+            # 18 degree chamfer at top of recess cutter
             cone2 = Part.makeCone(
-                r_top,
-                max(r_bot, A * 0.05),
-                chamfer_h,
+                0.505 * A + depth / math.tan(math.radians(18)),
+                0.49 * B,
+                depth + (0.505 * A - 0.49 * B) * math.tan(math.radians(18)),
                 Base.Vector(0.0, 0.0, depth),
                 Base.Vector(0.0, 0.0, -1.0),
                 360

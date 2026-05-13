@@ -182,7 +182,18 @@ def makeHexNut(self, fa):
         m_min = fa.dimTable[6]
         m = (m_max + m_min) / 2
         s = (fa.dimTable[8] + fa.dimTable[9]) / 2
-    elif SType[:3] == 'ISO' or SType == "DIN934":
+    elif SType == "DIN934":
+        # CSV columns (updated): P, da_max, da_min, dw, e, m_max, m_min, mw, s
+        P = fa.dimTable[0]
+        da_max = fa.dimTable[1]
+        da_min = fa.dimTable[2]
+        da = (da_max + da_min) / 2
+        e = fa.dimTable[4]
+        m_max = fa.dimTable[5]
+        m_min = fa.dimTable[6]
+        m = (m_max + m_min) / 2
+        s = fa.dimTable[8]
+    elif SType[:3] == 'ISO':
         P, _, da, _, e, m, _, s = fa.dimTable
     elif SType == 'ASMEB18.2.2.1A':
         # CSV columns: P, da, e_max, e_min, m_max, m_min, s_max, s_min (mm)

@@ -118,8 +118,7 @@ def makeWingNut(self, fa):
                 try: tpi = _TAI.resolve_nut_tpi(fa)
                 except: pass
             tpi = tpi if (tpi and tpi > 0) else (25.4/P if P > 0 else 8.0)
-            p_thread = 25.4 / tpi if tpi > 0 else P
-            shape = shape.cut(self.CreateInnerThreadCutter(dia + 0.05/tpi, p_thread, m + p_thread))
+            shape = shape.cut(self.CreateInnerThreadCutter(dia + 0.05/tpi, P, m + P))
         else:
             # DIN315: use 'do' (actual bore dia) so cutter matches the drilled hole.
             # Offset by inner_cham_ht to cut only the cylindrical bore section.

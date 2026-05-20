@@ -75,6 +75,32 @@ def _read_dims(fa):
     return d1, d2, h
 
 
+def _read_tooth_length(fa, r_inner, r_outer, default_tooth_frac):
+    """
+    Return (r_root, tooth_len, ring_len) given a user-supplied ToothLength.
+
+    r_inner           — bore/wall radius (inner edge of the full radial span)
+    r_outer           — outer tip radius
+    default_tooth_frac — fraction of total span used as tooth length when
+                         ToothLength is 0 or absent (e.g. 0.5 for 50/50 split)
+
+    Total radial span = r_outer - r_inner  (fixed by CSV dimensions).
+    tooth_len + ring_len = total span (always).
+    r_root = r_inner + ring_len  (where teeth begin).
+    """
+    total = r_outer - r_inner
+    tooth_len = total * default_tooth_frac   # fallback if property absent
+    if hasattr(fa, "ToothLength") and fa.ToothLength:
+        try:
+            tooth_len = float(FreeCAD.Units.Quantity(str(fa.ToothLength)).Value)
+        except Exception:
+            pass
+    tooth_len = max(min(tooth_len, total * 0.95), total * 0.05)
+    ring_len = total - tooth_len
+    r_root = r_inner + ring_len
+    return r_root, tooth_len, ring_len
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  INTERNAL TOOTH LOCK WASHER  (Types 6 & 7)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,15 +136,28 @@ def makeInternalToothLockWasher(self, fa):
     r_tip = d1 / 2.0
     r_out = d2 / 2.0
 
-    root_frac = 0.45 if is_type_b else 0.50
-    r_root    = r_tip + root_frac * (r_out - r_tip)
+    # Internal teeth go inward: r_root is the inner edge of the outer ring.
+    # tooth_len = r_root - r_tip  (inward from ring toward bore).
+    # ring_len  = r_out  - r_root (the solid outer ring band).
+    # Increasing ToothLength moves r_root outward → longer teeth, shorter ring.
+    _total = r_out - r_tip
+    _tooth_frac = 0.45 if is_type_b else 0.50
+    _tooth_len = _total * _tooth_frac   # default
+    if hasattr(fa, "ToothLength") and fa.ToothLength:
+        try:
+            _tooth_len = float(FreeCAD.Units.Quantity(str(fa.ToothLength)).Value)
+        except Exception:
+            pass
+    _tooth_len = max(min(_tooth_len, _total * 0.95), _total * 0.05)
+    r_root = r_tip + _tooth_len
 
     pitch = 2.0 * math.pi / n
 
     _gap_frac = 0.35 if is_type_b else 0.30
-    if hasattr(fa, "ToothWidth") and fa.ToothWidth:
+    _recess_val = getattr(fa, "ToothRecessWidth", None)
+    if _recess_val:
         try:
-            gap_w = float(FreeCAD.Units.Quantity(str(fa.ToothWidth)).Value)
+            gap_w = float(FreeCAD.Units.Quantity(str(_recess_val)).Value)
             gap_w = max(gap_w, 0.05)
         except Exception:
             gap_w = max(r_root * pitch * _gap_frac, 0.05)
@@ -285,7 +324,7 @@ def makeExternalToothLockWasher(self, fa):
     else:
         n = 12 if is_type_b else 10
 
-    if hasattr(fa, "ToothTwistAngle") and 0.0 < fa.ToothTwistAngle <= 45.0:
+    if hasattr(fa, "ToothTwistAngle") and fa.ToothTwistAngle is not None and 0.0 < fa.ToothTwistAngle <= 45.0:
         twist_deg = float(fa.ToothTwistAngle)
     else:
         twist_deg = 15.0
@@ -295,10 +334,8 @@ def makeExternalToothLockWasher(self, fa):
 
     # ─── Type 9: cone body with gap wedges cut between teeth ────────────────
     if is_type9:
-        # Equal split: inner ring radial extent == outer tooth radial extent.
-        # The inner band (bore → r_root) is the continuous conical ring.
-        # The outer band (r_root → r_tip) carries the teeth.
-        r_root = (r_bore + r_tip) / 2.0
+        # Default 50/50 split; ToothLength overrides so tooth+ring = total span.
+        r_root, _, _ = _read_tooth_length(fa, r_bore, r_tip, 0.50)
 
         # Cone tilt.  Type 9A mates with 82° countersink screw heads → cone
         # apex angle 82°, surface tilted 49° from horizontal.
@@ -450,8 +487,10 @@ def makeExternalToothLockWasher(self, fa):
         return result
 
     # ─── Type 8: flat washer with twisted teeth ─────────────────────────────
-    root_frac = 0.45 if is_type_b else 0.40
-    r_wall = r_bore + root_frac * (r_tip - r_bore)
+    # Default tooth fraction: 55% (B) / 60% (A) of total span.
+    # ToothLength overrides; ring adjusts so tooth+ring = total span.
+    _tooth_frac8 = 0.55 if is_type_b else 0.60
+    r_wall, _, _ = _read_tooth_length(fa, r_bore, r_tip, _tooth_frac8)
 
     pitch_arc = r_wall * 2.0 * math.pi / n
     _wf_default = 0.45 if is_type_b else 0.50

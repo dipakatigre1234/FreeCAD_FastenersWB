@@ -117,6 +117,8 @@ NutParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded",
 WoodInsertParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded"}
 HeatInsertParameters = {"Type", "Diameter", "lengthArbitrary", "ExternalDiam", "MatchOuter", "Thread", "LeftHanded"}
 WasherParameters = {"Type", "Diameter", "MatchOuter"}
+ToothLockWasherParameters = {"Type", "Diameter", "MatchOuter",
+                             "ToothCount", "ToothTwistAngle", "ToothWidth"}
 PCBStandoffParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                          "LeftHanded", "Thread_Length", "LenByDiamAndWidth", "LengthCustom", "widthCode",
                          "TPitch", "TLength", "TThread"}
@@ -151,7 +153,9 @@ FastenerAttribs = ['Type', 'Diameter', 'Thread', 'LeftHanded', 'MatchOuter', 'Le
                    # ASME nut internal thread properties (un_unr_internal_thread_minor_dia.csv)
                    'Thread_Type_Nut', 'Thread_TPI_Nut', 'Thread_Class_Nut_ASME',
                    # Security pin -- must be in key so changes invalidate the cache
-                   'SecurityPin', 'SecurityPinDiameter']
+                   'SecurityPin', 'SecurityPinDiameter',
+                   # Tooth lock washer user parameters
+                   'ToothCount', 'ToothTwistAngle', 'ToothWidth']
 
 HexHeadGroup        = translate("FastenerCmd", "Hex head")
 HexagonSocketGroup  = translate("FastenerCmd", "Hexagon socket")
@@ -349,6 +353,14 @@ FSScrewCommandTable = {
     "ASMEB18.21.1.12A":(translate("FastenerCmd", "UN washers, narrow series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12B":(translate("FastenerCmd", "UN washers, regular series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12C":(translate("FastenerCmd", "UN washers, wide series"), WasherGroup, WasherParameters),
+    "ASMEB18.21.1.6A": (translate("FastenerCmd", "Internal tooth lock washer, Type A"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.6B": (translate("FastenerCmd", "Internal tooth lock washer, Type B"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.7A": (translate("FastenerCmd", "Heavy internal tooth lock washer, Type A"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.7B": (translate("FastenerCmd", "Heavy internal tooth lock washer, Type B"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.8A": (translate("FastenerCmd", "External tooth lock washer, Type A"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.8B": (translate("FastenerCmd", "External tooth lock washer, Type B"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.9A": (translate("FastenerCmd", "Countersunk external tooth lock washer, Type A"), WasherGroup, ToothLockWasherParameters),
+    "ASMEB18.21.1.9B": (translate("FastenerCmd", "Countersunk external tooth lock washer, Type B"), WasherGroup, ToothLockWasherParameters),
     "DIN6319C": (translate("FastenerCmd", "Spherical washer"), WasherGroup, WasherParameters),
     "DIN6319D": (translate("FastenerCmd", "Conical seat"), WasherGroup, WasherParameters),
     "DIN6319G": (translate("FastenerCmd", "Conical seat"), WasherGroup, WasherParameters),
@@ -731,6 +743,11 @@ class FSScrewObject(FSBaseObject):
             FastenerBase.FSCache.clear()
             return
 
+        # Tooth lock washer user parameters — any change regenerates the shape
+        if prop in ("ToothCount", "ToothTwistAngle", "ToothWidth") and hasattr(fp, prop):
+            FastenerBase.FSCache.clear()
+            return
+
         # ── ASME nut type/TPI/class cascade ─────────────────────────────────
         if prop == "Thread_Type_Nut" and hasattr(fp, "Thread_Type_Nut")                 and _TAI is not None                 and _is_asme_std(str(getattr(fp, "Type", "") or "")):
             _dia_an = str(getattr(fp, "Diameter", "") or "")
@@ -984,6 +1001,61 @@ class FSScrewObject(FSBaseObject):
         # Show/hide SecurityPinDiameter depending on whether SecurityPin is enabled
         if hasattr(obj, "SecurityPin") and hasattr(obj, "SecurityPinDiameter"):
             obj.setEditorMode("SecurityPinDiameter", 0 if obj.SecurityPin else 2)
+
+        # ── Tooth lock washer user parameters ────────────────────────────────────
+        if "ToothCount" in params and not hasattr(obj, "ToothCount"):
+            default_n = 9 if type.endswith("B") else 10
+            obj.addProperty("App::PropertyInteger", "ToothCount", "ToothLockWasher",
+                translate("FastenerCmd",
+                    "Number of teeth (default: 9 for Type B, 10 for Type A)")
+            ).ToothCount = default_n
+        if "ToothTwistAngle" in params and not hasattr(obj, "ToothTwistAngle"):
+            obj.addProperty("App::PropertyFloat", "ToothTwistAngle", "ToothLockWasher",
+                translate("FastenerCmd",
+                    "Tooth tip twist angle in degrees. "
+                    "Twist decreases from this value at the bore tip to 0 at the ring edge.")
+            ).ToothTwistAngle = 15.0
+        if "ToothWidth" in params and not hasattr(obj, "ToothWidth"):
+            # For internal washers (6, 7): ToothWidth = rectangular gap width between teeth.
+            # For external washers (8, 9): ToothWidth = tooth width.
+            _is_internal = ("ASMEB18.21.1.6" in type or "ASMEB18.21.1.7" in type)
+            try:
+                import math as _math
+                _dia_key = str(obj.Diameter)
+                _dimrow  = FastenerBase.FsData[type + "def"][_dia_key]
+                if len(_dimrow) == 6:
+                    _d1 = (_dimrow[0] + _dimrow[1]) / 2.0
+                    _d2 = (_dimrow[2] + _dimrow[3]) / 2.0
+                else:
+                    _d1, _d2 = float(_dimrow[0]), float(_dimrow[1])
+                _r_tip   = _d1 / 2.0
+                _r_out   = _d2 / 2.0
+                _rf      = 0.45 if type.endswith("B") else 0.50
+                _r_root  = _r_tip + _rf * (_r_out - _r_tip)
+                _n_def   = 9 if type.endswith("B") else 10
+                _pitch   = 2.0 * _math.pi / _n_def
+                if _is_internal:
+                    # default gap = 30 % (A) / 35 % (B) of pitch arc at r_root
+                    _gap_frac   = 0.35 if type.endswith("B") else 0.30
+                    _default_tw = max(_r_root * _pitch * _gap_frac, 0.05)
+                else:
+                    _wf         = 0.45 if type.endswith("B") else 0.50
+                    _default_tw = max(_r_root * _pitch * _wf, 0.05)
+            except Exception:
+                _default_tw = 1.0
+            _tw_tooltip = (
+                "Tooth gap width in mm — the rectangular gap between adjacent teeth. "
+                "Increasing this value narrows the teeth; decreasing it widens them."
+                if _is_internal else
+                "Tooth width in mm (or enter with unit, e.g. '0.05 in'). "
+                "FreeCAD shows the value in your active unit system — "
+                "mm and inches are correlated automatically."
+            )
+            obj.addProperty("App::PropertyLength", "ToothWidth", "ToothLockWasher",
+                translate("FastenerCmd", _tw_tooltip)
+            ).ToothWidth = _default_tw
+        # ── end tooth lock washer params ─────────────────────────────────────────
+
         if "widthCode" in params and not hasattr(obj,"Width"):
             obj.addProperty("App::PropertyEnumeration","Width","Parameters",
                 translate("FastenerCmd","Body width code")).Width = \

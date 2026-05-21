@@ -109,6 +109,8 @@ ScrewParameters = {"Type", "Diameter",
 ScrewParametersLC = {"Type", "Diameter", "MatchOuter",
                      "Thread", "LeftHanded", "Length", "LengthCustom",
                      "TPitch", "TLength", "TThread", "TType"}
+# Fixed-geometry screws: no length selection needed
+FixedScrewParameters = {"Type", "Diameter", "MatchOuter", "Thread", "TLength"}
 RodParameters = {"Type", "Diameter", "MatchOuter", "Thread",
                  "LeftHanded", "lengthArbitrary", "DiameterCustom", "PitchCustom",
                  "TPitch", "TLength", "TThread", "TType"}
@@ -287,9 +289,10 @@ FSScrewCommandTable = {
     "ISO7434":  (translate("FastenerCmd", "Slotted socket set screws with cone point"), SetScrewGroup, ScrewParametersLC),
     "ISO7435":  (translate("FastenerCmd", "Slotted socket set screws with long dog point"), SetScrewGroup, ScrewParametersLC),
     "ISO7436":  (translate("FastenerCmd", "Slotted socket set screws with cup point"), SetScrewGroup, ScrewParametersLC),
-    "DIN464":   (translate("FastenerCmd", "Knurled thumb screws, high type"), ThumbScrewGroup, ScrewParametersLC),
-    "DIN465":   (translate("FastenerCmd", "Slotted knurled thumb screws, high type"), ThumbScrewGroup, ScrewParametersLC),
-    "DIN653":   (translate("FastenerCmd", "Knurled thumb screws, low type"), ThumbScrewGroup, ScrewParametersLC),
+    "DIN464":          (translate("FastenerCmd", "Knurled thumb screws, high type"), ThumbScrewGroup, ScrewParametersLC),
+    "DIN465":          (translate("FastenerCmd", "Slotted knurled thumb screws, high type"), ThumbScrewGroup, ScrewParametersLC),
+    "DIN653":          (translate("FastenerCmd", "Knurled thumb screws, low type"), ThumbScrewGroup, ScrewParametersLC),
+    "WOOTZ_ADJ_BREMS": (translate("FastenerCmd", "Adjustment screw, knurled head with retaining-clip groove (P/N 717090)"), ThumbScrewGroup, FixedScrewParameters),
     "GroundScrew":(translate("FastenerCmd", "round plate ground screw"), GroundScrewGroup, ScrewParametersLC),
     "ASMEB18.2.2.1A":(translate("FastenerCmd", "UNC Hex Machine screw nuts"), NutGroup, NutParameters),
     "ASMEB18.2.2.1B":(translate("FastenerCmd", "UNC Square machine screw nuts"), NutGroup, NutParameters),
@@ -358,6 +361,9 @@ FSScrewCommandTable = {
     "GN506":    (translate("FastenerCmd", "GN 506 T-Slot nuts to swivel in"), TSlotGroup, TSlotNutParameters),
     "GN507":    (translate("FastenerCmd", "GN 507 T-Slot sliding nuts"), TSlotGroup, TSlotNutParameters),
     "ISO299":   (translate("FastenerCmd", "T-Slot nuts"), TSlotGroup, TSlotNutParameters),
+    "ASMEB18.21.1.1":  (translate("FastenerCmd", "Helical spring lock washer, regular series"), WasherGroup, WasherParameters),
+    "ASMEB18.21.1.2":  (translate("FastenerCmd", "Helical spring lock washer, heavy series"), WasherGroup, WasherParameters),
+    "ASMEB18.21.1.3":  (translate("FastenerCmd", "Helical spring lock washer, extra duty series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12A":(translate("FastenerCmd", "UN washers, narrow series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12B":(translate("FastenerCmd", "UN washers, regular series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12C":(translate("FastenerCmd", "UN washers, wide series"), WasherGroup, WasherParameters),

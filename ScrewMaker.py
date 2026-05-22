@@ -312,6 +312,7 @@ screwTables = {
 
     "ASMEB18.2.1.8": ("Screw", "makeHexHeadWithFlange"),
     "ASMEB18.2.1.9": ("Screw", "makeLobeHeadScrew"),
+    "ASMEB18.2.5M":  ("Screw", "make12PointFlangeBolt"),
     "ASMEB18.2.2.1A": ("Nut", "makeHexNut"),
     "ASMEB18.2.2.1B": ("Nut", "makeSquareNut"),
     "ASMEB18.2.2.3": ("Nut", "makeSquareNut"),    # Square nuts
@@ -363,6 +364,7 @@ screwTables = {
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),
+    "ASMEB18.21.1.4":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.12A": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12B": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12C": ("Washer", "makeWasher"),

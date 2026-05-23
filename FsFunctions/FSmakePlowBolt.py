@@ -39,6 +39,8 @@ def makePlowBolt(self, fa):
         return _makeType3PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.4":
         return _makeType4PlowBolt(self, fa, L)
+    elif SType == "ASMEB18.9.5":
+        return _makeType5PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.6":
         return _makeType6PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.7":
@@ -239,6 +241,79 @@ def _makeType4PlowBolt(self, fa, L):
     # Final assembly
     p_solid = shaft.fuse(pyramid_taper).fuse(head_flat)
     p_solid = p_solid.removeSplitter()
+
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
+    return Part.Solid(p_solid)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Type 5 — Clipped Head Plow Bolt
+# Three-zone revolved head (top chamfer, 22° countersink, 40° bottom taper),
+# then clipped to width B across two parallel flats.
+# ─────────────────────────────────────────────────────────────────────────
+def _makeType5PlowBolt(self, fa, L):
+    # ASMEB18.9.5def: e_max,e_min,a_max,a_min,c_max,c_min,h_max,h_min
+    (e_max, e_min,
+     a_max, a_min,
+     c_max, c_min,
+     h_max, h_min) = fa.dimTable
+
+    d = ((e_max + e_min) / 2.0) * 25.4
+    A = ((a_max + a_min) / 2.0) * 25.4   # Outer head diameter
+    B = ((c_max + c_min) / 2.0) * 25.4   # Width across clipped flats
+    H = ((h_max + h_min) / 2.0) * 25.4   # Total head height
+
+    P_angle_deg       = 40.0   # Bottom taper angle (per spec)
+    countersink_angle = 22.0   # Top countersink (fixed)
+    top_chamfer       = 0.03 * 25.4
+
+    R_top = A / 2.0
+    R_bot = d / 2.0
+
+    tan_alpha = math.tan(math.radians(countersink_angle / 2.0))
+    tan_P     = math.tan(math.radians(P_angle_deg))
+
+    # Solve for the Z and R at which the 22° countersink meets the 40° taper.
+    numerator   = R_top - R_bot - (H * tan_P) + (top_chamfer * tan_alpha)
+    denominator = tan_P - tan_alpha
+    Z_int = numerator / denominator
+    R_int = R_top + (Z_int + top_chamfer) * tan_alpha
+
+    # ── 2D revolve profile ────────────────────────────────────────────────
+    p0 = FreeCAD.Vector(0,                       0, 0)
+    p1 = FreeCAD.Vector(R_top - top_chamfer,     0, 0)
+    p2 = FreeCAD.Vector(R_top,                   0, -top_chamfer)
+    p3 = FreeCAD.Vector(R_int,                   0, Z_int)
+    p4 = FreeCAD.Vector(R_bot,                   0, -H)
+    p5 = FreeCAD.Vector(0,                       0, -H)
+
+    wire = Part.makePolygon([p0, p1, p2, p3, p4, p5, p0])
+    face = Part.Face(wire)
+    head_solid = face.revolve(
+        FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360
+    )
+
+    # ── Clip two parallel flats to width B ────────────────────────────────
+    box_len = A * 3
+    box_h   = H * 3
+    clip_box = Part.makeBox(box_len, B, box_h)
+    clip_box.translate(FreeCAD.Vector(-box_len / 2.0, -B / 2.0, -H * 1.5))
+    head_clipped = head_solid.common(clip_box)
+
+    # ── Shaft + entry chamfer ─────────────────────────────────────────────
+    bot_chamfer_height = 0.05 * 25.4
+    bot_chamfer_depth  = 0.03 * 25.4
+
+    shaft_length = L - H - bot_chamfer_height
+    shaft = Part.makeCylinder(d / 2.0, shaft_length)
+    shaft.translate(FreeCAD.Vector(0, 0, -L + bot_chamfer_height))
+
+    chamfer = Part.makeCone(
+        (d / 2.0) - bot_chamfer_depth, d / 2.0, bot_chamfer_height
+    )
+    chamfer.translate(FreeCAD.Vector(0, 0, -L))
+
+    p_solid = head_clipped.fuse(shaft).fuse(chamfer).removeSplitter()
 
     p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)

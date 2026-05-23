@@ -277,6 +277,7 @@ FSScrewCommandTable = {
     "ASMEB18.5.2":(translate("FastenerCmd", "UNC Round head square neck bolts"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.9.3":(translate("FastenerCmd", "Type No. 3 Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.9.4":(translate("FastenerCmd", "Type No. 4 Repair Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
+    "ASMEB18.9.5":(translate("FastenerCmd", "Clipped Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.9.6":(translate("FastenerCmd", "Type No. 6 Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.9.7":(translate("FastenerCmd", "Type No. 7 Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
     "DIN478":   (translate("FastenerCmd", "Square head bolts with collar"), OtherHeadGroup, ScrewParametersLC),

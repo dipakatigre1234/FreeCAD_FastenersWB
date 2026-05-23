@@ -363,6 +363,7 @@ screwTables = {
     "ASMEB18.5.2": ("Screw", "makeCarriageBolt"),
     "ASMEB18.9.3": ("Screw", "makePlowBolt"),
     "ASMEB18.9.4": ("Screw", "makePlowBolt"),
+    "ASMEB18.9.5": ("Screw", "makePlowBolt"),
     "ASMEB18.9.6": ("Screw", "makePlowBolt"),
     "ASMEB18.9.7": ("Screw", "makePlowBolt"),
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),

@@ -39,6 +39,8 @@ def makePlowBolt(self, fa):
         return _makeType3PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.4":
         return _makeType4PlowBolt(self, fa, L)
+    elif SType == "ASMEB18.9.6":
+        return _makeType6PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.7":
         return _makeType7PlowBolt(self, fa, L)
     else:
@@ -127,13 +129,13 @@ def _makeType3PlowBolt(self, fa, L):
 
     d        = ((e_max + e_min) / 2.0) * 25.4
     A        = ((a_max + a_min_sharp) / 2.0) * 25.4
-    F        = f_max * 25.4
     S        = ((s_max + s_min) / 2.0) * 25.4
     B        = ((b_max + b_min) / 2.0) * 25.4
     R_corner = r_max * 25.4
 
     angle = 41.0
     bottom_chamfer_size = d / 10.0
+    top_chamfer_size    = d / 15.0
 
     # Shaft with bottom chamfer
     shaft_main = Part.makeCylinder(d / 2, L - bottom_chamfer_size)
@@ -144,15 +146,16 @@ def _makeType3PlowBolt(self, fa, L):
     shaft_chamfer.translate(FreeCAD.Vector(0, 0, -L))
     shaft = shaft_main.fuse(shaft_chamfer)
 
-    # Flat countersink head (with straight cylindrical margin)
-    head_margin = Part.makeCylinder(A / 2, F)
-    head_margin.translate(FreeCAD.Vector(0, 0, -F))
-
+    # Flat countersink head with top chamfer
     H_cone = (A / 2 - d / 2) / math.tan(math.radians(angle))
     head_cone = Part.makeCone(d / 2, A / 2, H_cone)
-    head_cone.translate(FreeCAD.Vector(0, 0, -(F + H_cone)))
-
-    head_full = head_margin.fuse(head_cone)
+    head_cone.translate(FreeCAD.Vector(0, 0, -H_cone))
+    top_edges = [
+        edge for edge in head_cone.Edges
+        if abs(edge.CenterOfMass.z) < 0.001
+    ]
+    if top_edges:
+        head_cone = head_cone.makeChamfer(top_chamfer_size, top_edges)
 
     # Square neck with conical bottom taper
     R_diag  = (B / math.sqrt(2)) + 0.5
@@ -176,12 +179,11 @@ def _makeType3PlowBolt(self, fa, L):
     tool = outerBox.cut(innerBox)
     neck_final = neck_raw.cut(tool)
 
-    p_solid = shaft.fuse(neck_final).fuse(head_full)
+    p_solid = shaft.fuse(neck_final).fuse(head_cone)
     p_solid = p_solid.removeSplitter()
 
     p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)
-
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -237,6 +239,74 @@ def _makeType4PlowBolt(self, fa, L):
     # Final assembly
     p_solid = shaft.fuse(pyramid_taper).fuse(head_flat)
     p_solid = p_solid.removeSplitter()
+
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
+    return Part.Solid(p_solid)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Type 6 — Head Plow Bolt (cone+margin head with side triangular key)
+# ─────────────────────────────────────────────────────────────────────────
+def _makeType6PlowBolt(self, fa, L):
+    # Same column layout as ASMEB18.9.7def
+    (e_max, e_min,
+     a_max, a_min_sharp, a_abs_min,
+     f_max,
+     s_max, s_min,
+     g_max, g_min) = fa.dimTable
+
+    d = ((e_max + e_min) / 2.0) * 25.4
+    A = ((a_max + a_min_sharp) / 2.0) * 25.4   # Head diameter
+    F = f_max * 25.4                            # Margin (feed) thickness
+    H = ((g_max + g_min) / 2.0) * 25.4          # Total head height (incl. cone)
+    J = ((s_max + s_min) / 2.0) * 25.4          # Triangular key width
+    P = 0.100 * 25.4                            # Key radial protrusion (fixed)
+
+    # Chamfer parameters from macro
+    chamfer_height = 0.05 * 25.4
+    chamfer_depth  = 0.03 * 25.4
+
+    # Head conical geometry (42° included angle)
+    angle_included  = 42.0
+    half_angle      = math.radians(angle_included / 2.0)
+    conical_height  = H - F
+    R_bottom        = (A / 2.0) - (conical_height * math.tan(half_angle))
+
+    # ── Shaft + entry chamfer ─────────────────────────────────────────────
+    shaft = Part.makeCylinder(d / 2, L - chamfer_height)
+    shaft.translate(FreeCAD.Vector(0, 0, -(L - chamfer_height)))
+
+    chamfer = Part.makeCone(d / 2 - chamfer_depth, d / 2, chamfer_height)
+    chamfer.translate(FreeCAD.Vector(0, 0, -L))
+
+    # ── Head: flat cylindrical margin + tapered cone underneath ───────────
+    head_flat = Part.makeCylinder(A / 2, F)
+    head_flat.translate(FreeCAD.Vector(0, 0, -F))
+
+    head_cone = Part.makeCone(R_bottom, A / 2, conical_height)
+    head_cone.translate(FreeCAD.Vector(0, 0, -H))
+
+    main_body = shaft.fuse(chamfer).fuse(head_cone).fuse(head_flat)
+
+    # ── Triangular key (lofted from bottom triangle to top triangle) ──────
+    overlap = 0.05 * 25.4  # small overlap so the key fuses cleanly into head
+
+    # Bottom triangle at Z = -H (touches cone bottom radius)
+    p1_b = FreeCAD.Vector(-(R_bottom + P),      0,         -H)
+    p2_b = FreeCAD.Vector(-(R_bottom - overlap),  J / 2.0, -H)
+    p3_b = FreeCAD.Vector(-(R_bottom - overlap), -J / 2.0, -H)
+    bottom_wire = Part.makePolygon([p1_b, p2_b, p3_b, p1_b])
+
+    # Top triangle at Z = 0 (touches outer head radius)
+    p1_t = FreeCAD.Vector(-(A / 2.0 + P),      0,         0)
+    p2_t = FreeCAD.Vector(-(A / 2.0 - overlap),  J / 2.0, 0)
+    p3_t = FreeCAD.Vector(-(A / 2.0 - overlap), -J / 2.0, 0)
+    top_wire = Part.makePolygon([p1_t, p2_t, p3_t, p1_t])
+
+    key_solid = Part.makeLoft([bottom_wire, top_wire], True)
+
+    # ── Final fusion + thread cut ─────────────────────────────────────────
+    p_solid = main_body.fuse(key_solid).removeSplitter()
 
     p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)

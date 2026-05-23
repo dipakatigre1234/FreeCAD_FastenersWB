@@ -36,17 +36,84 @@ def makePlowBolt(self, fa):
     L     = fa.calc_len   # mm, user-selected length
 
     if SType == "ASMEB18.9.3":
-        return _makeType3PlowBolt(fa, L)
+        return _makeType3PlowBolt(self, fa, L)
+    elif SType == "ASMEB18.9.4":
+        return _makeType4PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.7":
-        return _makeType7PlowBolt(fa, L)
+        return _makeType7PlowBolt(self, fa, L)
     else:
         raise NotImplementedError(f"Unknown plow bolt type: {SType}")
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# UNC TPI table for plow bolts (ASME B18.9 standard threads)
+# ─────────────────────────────────────────────────────────────────────────
+_PLOW_UNC_TPI = {
+    "5/16in": 18,
+    "3/8in":  16,
+    "7/16in": 14,
+    "1/2in":  13,
+    "9/16in": 12,
+    "5/8in":  11,
+    "3/4in":  10,
+    "7/8in":   9,
+    "1in":     8,
+}
+
+
+def _apply_plow_threads(screw, fa, p_solid, d_body, length):
+    """Cut UNC threads on the bottom portion of the shaft.
+
+    Mirrors the FSmakeCarriageBolt threading pattern but pulls TPI from
+    a hard-coded UNC table since the plow bolt CSVs don't carry TPI.
+    Honors dashboard overrides: calc_pitch, calc_tpi, calc_thread_length.
+    """
+    if not getattr(fa, "Thread", False):
+        return p_solid
+
+    diam_key = str(fa.calc_diam)
+    tpi_tbl = _PLOW_UNC_TPI.get(diam_key)
+    if tpi_tbl is None:
+        FreeCAD.Console.PrintWarning(
+            f"PlowBolt: no UNC TPI for {diam_key}, skipping threads\n"
+        )
+        return p_solid
+
+    P_tbl = 25.4 / tpi_tbl
+
+    # Default thread length per ASME B1.1: 2D + 0.25in (≤6in), else 2D + 0.5in
+    L_t = (d_body * 2 + 6.35) if length <= 152.4 else (d_body * 2 + 12.7)
+
+    # Dashboard overrides
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    pitch = raw_pitch if (raw_pitch is not None and raw_pitch > 0.0) else P_tbl
+
+    raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
+    if raw_tlen > 0.0:
+        L_t = min(float(raw_tlen), length)
+    else:
+        L_t = min(L_t, length)
+
+    tpi = getattr(fa, "calc_tpi", None)
+    if not tpi or tpi <= 0:
+        tpi = tpi_tbl
+    thread_dia = d_body - (0.15 / tpi)
+
+    FreeCAD.Console.PrintMessage(
+        f"[PlowBolt] Threading: dia={d_body:.4f}mm, "
+        f"thread_dia={thread_dia:.4f}mm, TPI={tpi}, "
+        f"pitch={pitch:.4f}mm, thread_length={L_t:.2f}mm\n"
+    )
+
+    thread_cutter = screw.CreateBlindThreadCutter(thread_dia, pitch, L_t)
+    thread_cutter.translate(FreeCAD.Vector(0.0, 0.0, -1 * (length - L_t)))
+    return p_solid.cut(thread_cutter)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Type 3
 # ─────────────────────────────────────────────────────────────────────────
-def _makeType3PlowBolt(fa, L):
+def _makeType3PlowBolt(self, fa, L):
     # Unpack ASMEB18.9.3def: e_max,e_min,a_max,a_min_sharp,a_abs_min,
     # f_max,s_max,s_min,t_min,b_max,b_min,ac_min,r_max
     (e_max, e_min,
@@ -112,13 +179,73 @@ def _makeType3PlowBolt(fa, L):
 
     p_solid = shaft.fuse(neck_final).fuse(head_cone)
     p_solid = p_solid.removeSplitter()
+
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
+    return Part.Solid(p_solid)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Type 4 — Repair Head Plow Bolt (square pyramid head with flat margin)
+# ─────────────────────────────────────────────────────────────────────────
+def _makeType4PlowBolt(self, fa, L):
+    # Same column layout as ASMEB18.9.3def
+    (e_max, e_min,
+     a_max, a_min_sharp, a_abs_min,
+     f_max,
+     s_max, s_min,
+     t_min,
+     b_max, b_min,
+     ac_min,
+     r_max) = fa.dimTable
+
+    d = ((e_max + e_min) / 2.0) * 25.4
+    A = ((a_max + a_min_sharp) / 2.0) * 25.4   # Width of square head
+    F = f_max * 25.4                           # Feed (flat margin) thickness
+
+    angle_included = 82.0
+    angle_rad      = math.radians(angle_included / 2.0)
+    H_apex         = (A / 2.0) / math.tan(angle_rad)
+
+    bottom_chamfer_size = d / 10.0
+
+    # Shaft with bottom chamfer
+    shaft_main = Part.makeCylinder(d / 2, L - bottom_chamfer_size)
+    shaft_main.translate(FreeCAD.Vector(0, 0, -L + bottom_chamfer_size))
+    shaft_chamfer = Part.makeCone(
+        d / 2 - bottom_chamfer_size, d / 2, bottom_chamfer_size
+    )
+    shaft_chamfer.translate(FreeCAD.Vector(0, 0, -L))
+    shaft = shaft_main.fuse(shaft_chamfer)
+
+    # Square head margin (Feed thickness F)
+    head_flat = Part.makeBox(A, A, F)
+    head_flat.translate(FreeCAD.Vector(-A / 2, -A / 2, -F))
+
+    # Deep tapered pyramid frustum (lofted square wires)
+    def _square_wire(width, z):
+        w = width / 2.0
+        p1 = FreeCAD.Vector(-w, -w, z)
+        p2 = FreeCAD.Vector( w, -w, z)
+        p3 = FreeCAD.Vector( w,  w, z)
+        p4 = FreeCAD.Vector(-w,  w, z)
+        return Part.makePolygon([p1, p2, p3, p4, p1])
+
+    top_wire    = _square_wire(A,    -F)
+    bottom_wire = _square_wire(0.01, -F - H_apex)
+    pyramid_taper = Part.makeLoft([top_wire, bottom_wire], True)
+
+    # Final assembly
+    p_solid = shaft.fuse(pyramid_taper).fuse(head_flat)
+    p_solid = p_solid.removeSplitter()
+
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # Type 7
 # ─────────────────────────────────────────────────────────────────────────
-def _makeType7PlowBolt(fa, L):
+def _makeType7PlowBolt(self, fa, L):
     # Unpack ASMEB18.9.7def: e_max,e_min,a_max,a_min_sharp,a_abs_min,
     # f_max,s_max,s_min,g_max,g_min
     (e_max, e_min,
@@ -208,4 +335,5 @@ def _makeType7PlowBolt(fa, L):
                 "PlowBolt Type 7: fillet failed (topology too tight)\n"
             )
 
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)

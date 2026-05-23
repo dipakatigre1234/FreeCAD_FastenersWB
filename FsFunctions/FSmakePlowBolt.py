@@ -68,8 +68,12 @@ _PLOW_UNC_TPI = {
 def _apply_plow_threads(screw, fa, p_solid, d_body, length):
     """Cut UNC threads on the bottom portion of the shaft.
 
-    Mirrors the FSmakeCarriageBolt threading pattern but pulls TPI from
-    a hard-coded UNC table since the plow bolt CSVs don't carry TPI.
+    Thread length follows ASME B18.9 Table 7 — Minimum Thread Lengths of
+    Plow Bolts:  L_t = 2D + 0.25in, where D is the **nominal** bolt
+    diameter (not the body diameter `e`). For short bolts where the
+    computed L_t would exceed the available shaft, the thread runs all
+    the way up to the head ("T to H" — threaded to head).
+
     Honors dashboard overrides: calc_pitch, calc_tpi, calc_thread_length.
     """
     if not getattr(fa, "Thread", False):
@@ -85,8 +89,12 @@ def _apply_plow_threads(screw, fa, p_solid, d_body, length):
 
     P_tbl = 25.4 / tpi_tbl
 
-    # Default thread length per ASME B1.1: 2D + 0.25in (≤6in), else 2D + 0.5in
-    L_t = (d_body * 2 + 6.35) if length <= 152.4 else (d_body * 2 + 12.7)
+    # Nominal diameter D in mm (from DiaList, e.g. 1/2in -> 12.7mm).
+    # The ASME Table 7 formula 2D + 0.25in uses nominal D, not body dia.
+    D_nominal = screw.getDia(fa.calc_diam, False)
+
+    # ASME B18.9 Table 7: L_t = 2D + 0.25 in (=6.35 mm) for all bolt lengths.
+    L_t = 2.0 * D_nominal + 6.35
 
     # Dashboard overrides
     raw_pitch = getattr(fa, "calc_pitch", None)
@@ -96,6 +104,7 @@ def _apply_plow_threads(screw, fa, p_solid, d_body, length):
     if raw_tlen > 0.0:
         L_t = min(float(raw_tlen), length)
     else:
+        # "T to H" rule: if 2D+0.25 ≥ available shaft, thread up to the head.
         L_t = min(L_t, length)
 
     tpi = getattr(fa, "calc_tpi", None)
@@ -104,9 +113,11 @@ def _apply_plow_threads(screw, fa, p_solid, d_body, length):
     thread_dia = d_body - (0.15 / tpi)
 
     FreeCAD.Console.PrintMessage(
-        f"[PlowBolt] Threading: dia={d_body:.4f}mm, "
+        f"[PlowBolt] Threading (ASME B18.9 Table 7): "
+        f"D_nom={D_nominal:.4f}mm, body={d_body:.4f}mm, "
         f"thread_dia={thread_dia:.4f}mm, TPI={tpi}, "
-        f"pitch={pitch:.4f}mm, thread_length={L_t:.2f}mm\n"
+        f"pitch={pitch:.4f}mm, thread_length={L_t:.2f}mm "
+        f"(2D+0.25in = {2.0 * D_nominal + 6.35:.2f}mm)\n"
     )
 
     thread_cutter = screw.CreateBlindThreadCutter(thread_dia, pitch, L_t)

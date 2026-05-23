@@ -127,13 +127,13 @@ def _makeType3PlowBolt(self, fa, L):
 
     d        = ((e_max + e_min) / 2.0) * 25.4
     A        = ((a_max + a_min_sharp) / 2.0) * 25.4
+    F        = f_max * 25.4
     S        = ((s_max + s_min) / 2.0) * 25.4
     B        = ((b_max + b_min) / 2.0) * 25.4
     R_corner = r_max * 25.4
 
     angle = 41.0
     bottom_chamfer_size = d / 10.0
-    top_chamfer_size    = d / 15.0
 
     # Shaft with bottom chamfer
     shaft_main = Part.makeCylinder(d / 2, L - bottom_chamfer_size)
@@ -144,16 +144,15 @@ def _makeType3PlowBolt(self, fa, L):
     shaft_chamfer.translate(FreeCAD.Vector(0, 0, -L))
     shaft = shaft_main.fuse(shaft_chamfer)
 
-    # Flat countersink head with top chamfer
+    # Flat countersink head (with straight cylindrical margin)
+    head_margin = Part.makeCylinder(A / 2, F)
+    head_margin.translate(FreeCAD.Vector(0, 0, -F))
+
     H_cone = (A / 2 - d / 2) / math.tan(math.radians(angle))
     head_cone = Part.makeCone(d / 2, A / 2, H_cone)
-    head_cone.translate(FreeCAD.Vector(0, 0, -H_cone))
-    top_edges = [
-        edge for edge in head_cone.Edges
-        if abs(edge.CenterOfMass.z) < 0.001
-    ]
-    if top_edges:
-        head_cone = head_cone.makeChamfer(top_chamfer_size, top_edges)
+    head_cone.translate(FreeCAD.Vector(0, 0, -(F + H_cone)))
+
+    head_full = head_margin.fuse(head_cone)
 
     # Square neck with conical bottom taper
     R_diag  = (B / math.sqrt(2)) + 0.5
@@ -177,11 +176,12 @@ def _makeType3PlowBolt(self, fa, L):
     tool = outerBox.cut(innerBox)
     neck_final = neck_raw.cut(tool)
 
-    p_solid = shaft.fuse(neck_final).fuse(head_cone)
+    p_solid = shaft.fuse(neck_final).fuse(head_full)
     p_solid = p_solid.removeSplitter()
 
     p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────

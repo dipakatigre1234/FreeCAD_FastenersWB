@@ -285,6 +285,8 @@ FSScrewCommandTable = {
     "ASMEB18.9.9":(translate("FastenerCmd", "Elliptical Head Plow Bolt"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.15.1A":(translate("FastenerCmd", "UNC Type 1 Plain Pattern Eyebolt - Style A"), OtherHeadGroup, EyeboltParameters),
     "ASMEB18.15.1B":(translate("FastenerCmd", "UNC Type 1 Plain Pattern Eyebolt - Style B"), OtherHeadGroup, EyeboltParameters),
+    "ASMEB18.15.2A":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style A"), OtherHeadGroup, EyeboltParameters),
+    "ASMEB18.15.2B":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style B"), OtherHeadGroup, EyeboltParameters),
     "DIN478":   (translate("FastenerCmd", "Square head bolts with collar"), OtherHeadGroup, ScrewParametersLC),
     "DIN603":   (translate("FastenerCmd", "Mushroom head square neck bolts"), OtherHeadGroup, ScrewParametersLC),
     "ISO2342":  (translate("FastenerCmd", "headless screws with shank"), OtherHeadGroup, ScrewParametersLC),

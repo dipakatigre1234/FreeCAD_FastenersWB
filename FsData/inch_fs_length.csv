@@ -4,6 +4,7 @@
 "ASMEB18.9.5length"
 "ASMEB18.9.6length"
 "ASMEB18.9.7length"
+"ASMEB18.9.9length"
 "ASMEB18.6.3.1Alength"
 "ASMEB18.6.3.1Blength"
 "ASMEB18.6.3.1Clength"
@@ -33,6 +34,8 @@
 "ASMEB18.3.1Glength"
 "ASMEB18.2.1.1length"
 "ASMEB18.2.1.8length"
+"ASMEB18.15.1Alength"
+"ASMEB18.15.1Blength"
 "Nominal","Min","Max"
 "1/16in",1.539875,1.635125
 "3/32in",2.3098125,2.4526875

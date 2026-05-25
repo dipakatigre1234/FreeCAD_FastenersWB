@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" version="1.1" viewBox="0 0 12.7 12.7" xmlns="http://www.w3.org/2000/svg">
+ <!-- Eye ring (teal fill) -->
+ <g fill="#5fd3c2">
+  <!-- Outer circle of ring -->
+  <circle cx="6.35" cy="3.5" r="2.8"/>
+  <!-- Shank body -->
+  <rect x="5.65" y="5.8" width="1.4" height="6.3" rx="0.15"/>
+ </g>
+ <!-- Inner hole of ring (punched out in white) -->
+ <circle cx="6.35" cy="3.5" r="1.5" fill="#ffffff"/>
+ <!-- Outlines -->
+ <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width=".32">
+  <!-- Eye outer ring -->
+  <circle cx="6.35" cy="3.5" r="2.8"/>
+  <!-- Eye inner hole -->
+  <circle cx="6.35" cy="3.5" r="1.5"/>
+  <!-- Shank outline -->
+  <rect x="5.65" y="5.8" width="1.4" height="6.3" rx="0.15"/>
+  <!-- Thread lines on shank -->
+  <line x1="5.65" y1="7.0" x2="7.05" y2="7.0"/>
+  <line x1="5.65" y1="7.8" x2="7.05" y2="7.8"/>
+  <line x1="5.65" y1="8.6" x2="7.05" y2="8.6"/>
+  <line x1="5.65" y1="9.4" x2="7.05" y2="9.4"/>
+  <line x1="5.65" y1="10.2" x2="7.05" y2="10.2"/>
+  <line x1="5.65" y1="11.0" x2="7.05" y2="11.0"/>
+ </g>
+</svg>

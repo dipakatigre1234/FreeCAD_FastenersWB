@@ -45,6 +45,8 @@ def makePlowBolt(self, fa):
         return _makeType6PlowBolt(self, fa, L)
     elif SType == "ASMEB18.9.7":
         return _makeType7PlowBolt(self, fa, L)
+    elif SType == "ASMEB18.9.9":
+        return _makeType9PlowBolt(self, fa, L)
     else:
         raise NotImplementedError(f"Unknown plow bolt type: {SType}")
 
@@ -491,5 +493,111 @@ def _makeType7PlowBolt(self, fa, L):
                 "PlowBolt Type 7: fillet failed (topology too tight)\n"
             )
 
+    p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
+    return Part.Solid(p_solid)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Type 9 — Elliptical Head Plow Bolt
+# Convex elliptical dome → lofted elliptical→circular countersink →
+# tapered square neck (45° rotated) → chamfered shaft.
+# ─────────────────────────────────────────────────────────────────────────
+def _makeType9PlowBolt(self, fa, L):
+    # ASMEB18.9.9def columns: d, A, C, B, AC, S, T, R_corner  (all in inches)
+    # Values are taken directly from the CSV — no averaging.
+    d_in, A_in, C_in, B_in, AC_in, S_in, T_in, R_in = fa.dimTable
+
+    d        = d_in  * 25.4   # Shaft diameter
+    A        = A_in  * 25.4   # Big ellipse dia
+    C        = C_in  * 25.4   # Small ellipse dia
+    B        = B_in  * 25.4   # Square neck width
+    # AC (across corners) is declared by the macro but not used in geometry
+    S        = S_in  * 25.4   # Total head height
+    T        = T_in  * 25.4   # Top face to end of square corner
+    R_corner = R_in  * 25.4   # Square corner radius
+
+    dome_height    = S / 3.5
+    bot_chamfer_sz = d / 10.0
+
+    # Elliptical convex dome (top of head)
+    sphere = Part.makeSphere(1.0)
+    mat = FreeCAD.Matrix()
+    mat.scale(A / 2.0, C / 2.0, dome_height)
+    ellipsoid = sphere.transformGeometry(mat)
+    ellipsoid.translate(FreeCAD.Vector(0, 0, -dome_height))
+
+    box_dome = Part.makeBox(A * 2, A * 2, dome_height * 2)
+    box_dome.translate(FreeCAD.Vector(-A, -A, -dome_height))
+    dome = ellipsoid.common(box_dome)
+
+    # Countersink: loft ellipse (top) → circle (at -T)
+    ellipse_edge = Part.Edge(
+        Part.Ellipse(FreeCAD.Vector(0, 0, -dome_height), A / 2.0, C / 2.0)
+    )
+    wire1 = Part.Wire([ellipse_edge])
+
+    circle_edge = Part.Edge(
+        Part.Circle(
+            FreeCAD.Vector(0, 0, -T),
+            FreeCAD.Vector(0, 0, 1),
+            d / 2.0,
+        )
+    )
+    wire2 = Part.Wire([circle_edge])
+
+    countersink = Part.makeLoft([wire1, wire2], True)
+
+    head_solid = dome.fuse(countersink)
+    head_solid.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(0, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 90),
+    )
+
+    # Square neck (45° rotated cutter)
+    true_corner_radius = (B / 2.0 - R_corner) * math.sqrt(2) + R_corner
+
+    neck_cyl = Part.makeCylinder(true_corner_radius, T - dome_height)
+    neck_cyl.translate(FreeCAD.Vector(0, 0, -T))
+
+    neck_cone = Part.makeCone(d / 2.0, true_corner_radius, S - T)
+    neck_cone.translate(FreeCAD.Vector(0, 0, -S))
+
+    raw_neck = neck_cyl.fuse(neck_cone)
+
+    tool_length = L
+    outerBox = Part.makeBox(A * 3, A * 3, tool_length)
+    outerBox.translate(FreeCAD.Vector(-A * 1.5, -A * 1.5, -tool_length))
+
+    innerBox = Part.makeBox(B, B, tool_length * 2)
+    innerBox.translate(FreeCAD.Vector(-B / 2.0, -B / 2.0, -tool_length * 1.5))
+
+    vertical_edges = [
+        e for e in innerBox.Edges
+        if abs(e.BoundBox.ZLength - tool_length * 2) < 0.001
+    ]
+    if vertical_edges:
+        innerBox = innerBox.makeFillet(R_corner, vertical_edges)
+
+    tool = outerBox.cut(innerBox)
+    tool.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(0, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 45),
+    )
+
+    square_neck = raw_neck.cut(tool)
+
+    # Shaft with bottom entry chamfer
+    shaft_main = Part.makeCylinder(d / 2.0, L - S - bot_chamfer_sz)
+    shaft_main.translate(FreeCAD.Vector(0, 0, -L + bot_chamfer_sz))
+
+    shaft_chamfer = Part.makeCone(
+        d / 2.0 - bot_chamfer_sz, d / 2.0, bot_chamfer_sz
+    )
+    shaft_chamfer.translate(FreeCAD.Vector(0, 0, -L))
+
+    shaft = shaft_main.fuse(shaft_chamfer)
+
+    # Final assembly + threads
+    p_solid = head_solid.fuse(square_neck).fuse(shaft).removeSplitter()
     p_solid = _apply_plow_threads(self, fa, p_solid, d, L)
     return Part.Solid(p_solid)

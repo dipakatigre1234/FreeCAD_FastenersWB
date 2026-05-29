@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" version="1.1" viewBox="0 0 12.7 12.7" xmlns="http://www.w3.org/2000/svg">
+ <!-- Weld stud icon: shank + collar + weld cone -->
+ <g fill="#5fd3c2">
+  <!-- Shank body (upper threaded section) -->
+  <rect x="5.35" y="1.2" width="2.0" height="6.0" rx="0.1"/>
+  <!-- Collar / flange (wider disc) -->
+  <rect x="4.35" y="7.2" width="4.0" height="0.9" rx="0.1"/>
+  <!-- Weld cone tip (triangle below collar) -->
+  <polygon points="6.35,10.8 4.35,8.1 8.35,8.1"/>
+ </g>
+ <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width=".28">
+  <!-- Shank outline -->
+  <rect x="5.35" y="1.2" width="2.0" height="6.0" rx="0.1"/>
+  <!-- Thread lines on shank -->
+  <line x1="5.35" y1="2.1" x2="7.35" y2="2.1"/>
+  <line x1="5.35" y1="3.0" x2="7.35" y2="3.0"/>
+  <line x1="5.35" y1="3.9" x2="7.35" y2="3.9"/>
+  <line x1="5.35" y1="4.8" x2="7.35" y2="4.8"/>
+  <line x1="5.35" y1="5.7" x2="7.35" y2="5.7"/>
+  <line x1="5.35" y1="6.6" x2="7.35" y2="6.6"/>
+  <!-- Collar outline -->
+  <rect x="4.35" y="7.2" width="4.0" height="0.9" rx="0.1"/>
+  <!-- Weld cone outline -->
+  <polygon points="6.35,10.8 4.35,8.1 8.35,8.1"/>
+ </g>
+</svg>

@@ -144,7 +144,7 @@ PEMPressNutParameters = {"Type", "Diameter",
 PEMStandoffParameters = {"Type", "Diameter", "MatchOuter",
                          "Thread", "LeftHanded", "Length", "blindness",
                          "TPitch", "TLength", "TThread"}
-PEMBLStandoffParameters = {"Type", "Diameter", "MatchOuter", "Length"}
+PEMBLStandoffParameters = {"Type", "Diameter", "MatchOuter", "Length", "TThread"}
 RetainingRingParameters = {"Type", "Diameter", "MatchOuter"}
 PinParameters = {"Type", "Diameter", "Length", "LengthCustom", "LeftHanded"}
 TSlotNutParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded", "SlotWidth", "TNutThread"}

@@ -129,6 +129,32 @@ def makePEMBlindStandoff(self, fa):
     # F (min blind thread depth) varies with length - read from length table
     F = FsData[fa.baseType + "length"][fa.Length][0]
 
+    # ── Resolve nominal thread diameter + pitch ───────────────────────────────
+    # The hole_dia column is the tap-drill (minor) hole; the THREAD nominal
+    # diameter comes from the size key (e.g. M3 -> 3.0). Pitch is read from the
+    # same ISO262 source the self-clinching standoff (makePEMStandoff) uses.
+    #
+    # ROBUSTNESS: fa.Diameter for the blind standoff type may not be a clean
+    # "M3" key that ISO262def accepts (e.g. it can carry a "3.5M3" prefix or a
+    # size that is absent from the thread tables). We normalise it the same way
+    # makePEMStandoff does, then resolve dia via getDia and pitch via ISO262def,
+    # coercing both to float. If anything is off, thread is skipped (not crashed).
+    if fa.Diameter.startswith("3.5"):
+        dia_key = "M3"
+    else:
+        dia_key = fa.Diameter
+
+    dia = 0.0
+    P = 0.0
+    try:
+        dia = float(self.getDia(dia_key, True))
+        P = float(FsData["ISO262def"][dia_key][0])
+    except Exception as e:
+        FreeCAD.Console.PrintWarning(
+            "[PEMBlindStandoff] could not resolve dia/P for %r: %s — "
+            "thread will be skipped\n" % (dia_key, e)
+        )
+
     # 1. Shank (cylinder), extruded downwards so the head sits at Z = 0
     shank_radius = c / 2.0
     shank = Part.makeCylinder(shank_radius, L - sheet_thick)
@@ -163,4 +189,61 @@ def makePEMBlindStandoff(self, fa):
     blind_hole_tool = hole_cyl.fuse(hole_cone)
 
     # 4. Cut the hole from the main body
-    return body.cut(blind_hole_tool)
+    body = body.cut(blind_hole_tool)
+
+    # 5. Internal threading (blind, bottom-up) ────────────────────────────────
+    # The bore wall sits at hole_dia/2 (tap-drill / minor side). The cutter is
+    # run at the NOMINAL major diameter via CreateInnerThreadCutter(dia, P, ...)
+    # so it carves the thread form from major inward into the bore wall — the
+    # same proven call used in makePEMStandoff. Without running the cutter at
+    # the nominal dia, the thread crests float and produce disconnected rings.
+    #
+    # CreateInnerThreadCutter builds z-up (mouth at top). The blind hole opens
+    # DOWNWARD from bottom_z, so the cutter is flipped 180 deg about X (matching
+    # makePEMStandoff's blind branch) and positioned so its mouth aligns with
+    # the hole mouth at bottom_z, threading up into the cylindrical region only.
+    if fa.Thread and dia > 0 and P > 0:
+        # ROOT CAUSE of "makeLongHelix fails on parms":
+        # The cutter's numeric args (pitch=0.5, height≈4, radius=1.5) are
+        # textbook-valid and identical in shape to those a working M3 hex nut
+        # passes — so the numbers are NOT the problem. The only remaining input
+        # to Part.makeLongHelix(P, blen, r, 0, self.LeftHanded) is the 5th arg,
+        # self.LeftHanded. OCC requires a genuine bool there; if fa.LeftHanded
+        # was never initialised for this fastener type, self.LeftHanded is None,
+        # and makeLongHelix rejects it as a bad parameter.
+        #
+        # Force a clean bool for the duration of the cut, then restore.
+        _saved_lh = getattr(self, "LeftHanded", False)
+        self.LeftHanded = bool(_saved_lh) if _saved_lh is not None else False
+
+        conic_height = 0.55 * dia / math.tan(math.radians(59))
+        blind_len = max(F, conic_height + 2.0 * P)
+
+        try:
+            # Purpose-built blind inner thread cutter (bore + 118° point + thread).
+            # Built z-up, base at z=0, threads running +Z — matches the blind
+            # hole that opens downward at bottom_z with interior extending +Z.
+            thread_cutter = self.CreateBlindInnerThreadCutter(dia, P, blind_len)
+            thread_cutter.translate(Base.Vector(0.0, 0.0, bottom_z))
+            body = body.cut(thread_cutter)
+        except Exception as e1:
+            FreeCAD.Console.PrintWarning(
+                "[PEMBlindStandoff] blind cutter failed (dia=%r P=%r len=%r "
+                "LeftHanded=%r): %s — falling back to plain inner cutter\n"
+                % (dia, P, blind_len, self.LeftHanded, e1)
+            )
+            try:
+                cutter_len = max(L * 1.25, 7.5)
+                thread_cutter = self.CreateInnerThreadCutter(dia, P, cutter_len)
+                thread_cutter.translate(Base.Vector(0.0, 0.0, bottom_z))
+                body = body.cut(thread_cutter)
+            except Exception as e2:
+                FreeCAD.Console.PrintWarning(
+                    "[PEMBlindStandoff] internal thread skipped entirely "
+                    "(dia=%r P=%r LeftHanded=%r): %s\n"
+                    % (dia, P, self.LeftHanded, e2)
+                )
+        finally:
+            self.LeftHanded = _saved_lh
+
+    return body

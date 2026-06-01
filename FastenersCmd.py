@@ -144,6 +144,7 @@ PEMPressNutParameters = {"Type", "Diameter",
 PEMStandoffParameters = {"Type", "Diameter", "MatchOuter",
                          "Thread", "LeftHanded", "Length", "blindness",
                          "TPitch", "TLength", "TThread"}
+PEMBLStandoffParameters = {"Type", "Diameter", "MatchOuter", "Length"}
 RetainingRingParameters = {"Type", "Diameter", "MatchOuter"}
 PinParameters = {"Type", "Diameter", "Length", "LengthCustom", "LeftHanded"}
 TSlotNutParameters = {"Type", "Diameter", "MatchOuter", "Thread", "LeftHanded", "SlotWidth", "TNutThread"}
@@ -414,6 +415,7 @@ FSScrewCommandTable = {
     "IUTHeatInsert":  (translate("FastenerCmd", "IUT[A/B/C] Heat Staked Metric Insert"), InsertGroup, HeatInsertParameters),
     "PEMPressNut":    (translate("FastenerCmd", "PEM Self Clinching nut"), InsertGroup, PEMPressNutParameters),
     "PEMStandoff":    (translate("FastenerCmd", "PEM Self Clinching standoff"), InsertGroup, PEMStandoffParameters),
+    "PEMBLStandoff":  (translate("FastenerCmd", "PEM Self Clinching blind threaded standoff"), InsertGroup, PEMBLStandoffParameters),
     "PEMStud":        (translate("FastenerCmd", "PEM Self Clinching stud"), InsertGroup, ScrewParameters),
     "PCBSpacer":      (translate("FastenerCmd", "Wurth WA-SSTII PCB spacer"), InsertGroup, PCBSpacerParameters),
     "PCBStandoff":    (translate("FastenerCmd", "Wurth WA-SSTII  PCB standoff"), InsertGroup, PCBStandoffParameters),

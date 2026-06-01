@@ -113,3 +113,54 @@ def makePEMStandoff(self, fa):
             thread_cutter.translate(Base.Vector(0.0, 0.0, -d))
         fSolid = fSolid.cut(thread_cutter)
     return fSolid
+
+
+# PEM Blind Threaded standoffs types: BSO/BSOS/BSOA/BSO4
+# The geometry is a hex head + cylindrical shank with a blind, bottom-up
+# drilled hole (cylinder + 118 degree drill point). It is built faithfully
+# from a tested macro; only the fixed dimensions are replaced by values read
+# from the PEMBLStandoff data tables.
+
+
+def makePEMBlindStandoff(self, fa):
+    L = fa.calc_len                 # total length
+    # PEMBLStandoffdef columns: Sheet, Hole(in sheet), C, H, d, Min_L, Max_L
+    sheet_thick, _, c, h, hole_dia, _, _ = fa.dimTable
+    # F (min blind thread depth) varies with length - read from length table
+    F = FsData[fa.baseType + "length"][fa.Length][0]
+
+    # 1. Shank (cylinder), extruded downwards so the head sits at Z = 0
+    shank_radius = c / 2.0
+    shank = Part.makeCylinder(shank_radius, L - sheet_thick)
+    shank.translate(Base.Vector(0, 0, -(L - sheet_thick)))
+
+    # 2. Hexagonal head. Circumradius of the hexagon: R = H / sqrt(3)
+    hex_radius = h / math.sqrt(3)
+    edges = []
+    for i in range(6):
+        angle1 = math.radians(60 * i)
+        angle2 = math.radians(60 * (i + 1))
+        p1 = Base.Vector(hex_radius * math.cos(angle1), hex_radius * math.sin(angle1), 0)
+        p2 = Base.Vector(hex_radius * math.cos(angle2), hex_radius * math.sin(angle2), 0)
+        edges.append(Part.makeLine(p1, p2))
+    hex_wire = Part.Wire(edges)
+    hex_face = Part.Face(hex_wire)
+    head = hex_face.extrude(Base.Vector(0, 0, sheet_thick))
+
+    body = head.fuse(shank)
+
+    # 3. Blind hole tool (bottom-up): cylinder + 118 degree drill point cone
+    hole_radius = hole_dia / 2.0
+    drill_depth = F + 1.5
+    tip_angle = math.radians(90 - (118 / 2))
+    tip_height = hole_radius * math.tan(tip_angle)
+    bottom_z = -(L - sheet_thick)
+
+    hole_cyl = Part.makeCylinder(hole_radius, drill_depth)
+    hole_cyl.translate(Base.Vector(0, 0, bottom_z))
+    hole_cone = Part.makeCone(hole_radius, 0.0, tip_height)
+    hole_cone.translate(Base.Vector(0, 0, bottom_z + drill_depth))
+    blind_hole_tool = hole_cyl.fuse(hole_cone)
+
+    # 4. Cut the hole from the main body
+    return body.cut(blind_hole_tool)

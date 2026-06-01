@@ -214,6 +214,7 @@ screwTables = {
     "ISO7380-1": ("Screw", "makeButtonHeadScrew"),
     "ISO7380-2": ("Screw", "makeFlangedButtonHeadScrew"),
     "ISO13918": ("Screw", "makeWeldStud"),           # Table 11 welding stud PT
+    "ISO13918A": ("Screw", "makeWeldStud"),            # Table A internally threaded weld stud
     "ISO14579": ("Screw", "makeCylinderHeadScrew"),
     "ISO14580": ("Screw", "makeCheeseHeadScrew"),
     "ISO14581": ("Screw", "makeCountersunkHeadScrew"),

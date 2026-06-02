@@ -37,8 +37,9 @@ def makeHexHeadWithFlange(self, fa):
         # s = s_min                  # Type A (minimum material)
 
     elif SType == "ASMEB18.2.1.8":
-        # CSV columns: b0, P, c, dc, kw, r1, s_max, s_min, e_max, e_min
-        b0, P_tbl, c, dc, kw, r1, s_max, s_min, e_max, e_min = fa.dimTable
+        # CSV columns: b0, P, c, dc, k, kw, r1, s_max, s_min, e_max, e_min
+        # k = head height (ASME B18.2.1.8 max head height H)
+        b0, P_tbl, c, dc, k, kw, r1, s_max, s_min, e_max, e_min = fa.dimTable
         s = (s_max + s_min) / 2
 
     elif SType in ("ISO4162", "ISO15071"):
@@ -79,7 +80,11 @@ def makeHexHeadWithFlange(self, fa):
     tan_beta = math.tan(beta)
     arc1_x   = dc / 2.0 - c / 2.0 + (c / 2.0) * math.sin(beta)
     arc1_z   = c / 2.0 + (c / 2.0) * math.cos(beta)
-    kmean    = arc1_z + (arc1_x - s / sqrt3) * tan_beta + kw * 1.1 + cham
+    if SType == "ASMEB18.2.1.8":
+        # Use exact head height from the ASME B18.2.1.8 standard (max head height H)
+        kmean = k
+    else:
+        kmean = arc1_z + (arc1_x - s / sqrt3) * tan_beta + kw * 1.1 + cham
 
     # ── 5. HEAD: revolve profile + hex prism boolean cut ─────────────────
     fm = FSFaceMaker()

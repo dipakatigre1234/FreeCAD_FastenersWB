@@ -328,6 +328,7 @@ FSScrewCommandTable = {
     # ── ASME B18.2.2 Table 14 — Hex Coupling Nuts ────────────────────────────
     "ASMEB18.2.2.14":(translate("FastenerCmd", "UNC Hex coupling nuts"), NutGroup, NutParameters),
     "ASMEB18.6.9A":  (translate("FastenerCmd", "Wing nuts, type A"), NutGroup, NutParameters),
+    "ASMEB18.6.9.3": (translate("FastenerCmd", "Wing nuts, type 3"), NutGroup, NutParameters),
     "DIN315":   (translate("FastenerCmd", "Wing nuts"), NutGroup, NutParameters),
     "DIN557":   (translate("FastenerCmd", "Square nuts"), NutGroup, NutParameters),
     "DIN562":   (translate("FastenerCmd", "Square nuts"), NutGroup, NutParameters),

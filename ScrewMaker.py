@@ -329,6 +329,11 @@ screwTables = {
     "ASMEB18.2.2.13B": ("Nut", "makeHexNutWFlange"),  # Large Hex Flange Nuts (Table 13B)
     "ASMEB18.2.2.14": ("Nut", "makeHexNut"),      # Hex Coupling Nuts (Table 14)
     "ASMEB18.6.9A": ("Nut", "makeWingNut"),
+    "ASMEB18.6.9.2": ("Nut", "makeWingNut"),
+    "ASMEB18.6.9.3": ("Nut", "makeWingNut"),
+    "ASMEB18.6.9.4A": ("Nut", "makeWingNut"),
+    "ASMEB18.6.9.4B": ("Nut", "makeWingNut"),
+    "ASMEB18.6.9.6": ("Nut", "makeWingNut"),
     "SAEJ483a1": ("Nut", "makeCupNut"),
     "SAEJ483a2": ("Nut", "makeCupNut"),
     "ASMEB18.3.1A": ("Screw", "makeCylinderHeadScrew"),

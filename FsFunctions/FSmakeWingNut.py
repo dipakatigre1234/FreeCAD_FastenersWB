@@ -152,12 +152,23 @@ def makeWingNut(self, fa):
         H_wing = B - G        # Available Wing Height above boss
         
         # --- DYNAMIC MID-WALL ANCHORING ---
-        # We embed the root of the wing exactly 40% of the way into the solid wall 
-        # of the boss. This guarantees a massive, non-tangent fusion intersection 
-        # without piercing the inner thread bore.
+        # We embed the root of the wing into the solid wall of the boss. 
+        # To prevent the wing corners from lifting off the curved conical surface,
+        # we calculate the sagitta (arc depth) for the wing's thickness C.
         approx_inner_rad = dia / 2.0
-        ov_top = max(0.1, (rD - approx_inner_rad) * 0.40)
-        ov_bot = max(0.1, (rE - approx_inner_rad) * 0.40)
+        
+        sag_top = rD - math.sqrt(max(0.001, rD**2 - (C/2.0)**2)) if rD > C/2.0 else rD * 0.5
+        sag_bot = rE - math.sqrt(max(0.001, rE**2 - (C/2.0)**2)) if rE > C/2.0 else rE * 0.5
+        
+        ov_top_min = sag_top + 0.1
+        ov_bot_min = sag_bot + 0.1
+        
+        ov_top = max(ov_top_min, (rD - approx_inner_rad) * 0.40)
+        ov_bot = max(ov_bot_min, (rE - approx_inner_rad) * 0.40)
+        
+        # Clamp to ensure we never pierce the inner thread bore
+        ov_top = min(ov_top, (rD - approx_inner_rad) * 0.85)
+        ov_bot = min(ov_bot, (rE - approx_inner_rad) * 0.85)
 
         # Boss anchoring points mathematically embedded inside the wall
         v2 = Base.Vector(rE - ov_bot, 0.0, Z_cyl)   
@@ -372,7 +383,6 @@ def makeWingNut(self, fa):
         H = B - G
         W_bot = rA - rE
         
-        # --- NEW CODE: Dynamic Mid-Wall Anchoring ---
         approx_inner_rad = dia / 2.0
         ov_E = max(0.1, (rE - approx_inner_rad) * 0.45)
         ov_F = max(0.1, (rF - approx_inner_rad) * 0.45)

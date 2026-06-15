@@ -277,6 +277,7 @@ FSScrewCommandTable = {
     "ISO7049-C":(translate("FastenerCmd", "Pan head self tapping screws with conical point, type H cross r."), HCrossGroup, ScrewParametersLC),
     "ISO7049-F":(translate("FastenerCmd", "Pan head self tapping screws with flat point, type H cross r."), HCrossGroup, ScrewParametersLC),
     "ISO7049-R":(translate("FastenerCmd", "Pan head self tapping screws with rounded point type H cross r."), HCrossGroup, ScrewParametersLC),
+    "DIN7504K":(translate("FastenerCmd", "DIN 7504K Hex head self-drilling tapping screw"), HexHeadGroup, ScrewParametersLC),
     "ISO13918":  (translate("FastenerCmd", "Welding stud"), OtherHeadGroup, ScrewParametersLC),
     "ISO13918A": (translate("FastenerCmd", "Internally threaded welding stud"), OtherHeadGroup, ScrewParametersLC),
     "ASMEB18.5.2":(translate("FastenerCmd", "UNC Round head square neck bolts"), OtherHeadGroup, ScrewParametersLC),

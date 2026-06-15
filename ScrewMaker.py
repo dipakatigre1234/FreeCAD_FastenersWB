@@ -236,6 +236,7 @@ screwTables = {
     "ISO7049-C": ("Screw", "makeSelfTappingScrew"),
     "ISO7049-F": ("Screw", "makeSelfTappingScrew"),
     "ISO7049-R": ("Screw", "makeSelfTappingScrew"),
+    "DIN7504K": ("Screw", "makeSelfTappingScrew"),
     "ISO7089": ("Washer", "makeWasher"),
     "ISO7090": ("Washer", "makeWasher"),
     "ISO7091": ("Washer", "makeWasher"),

@@ -153,7 +153,7 @@ def makeWingNut(self, fa):
         try:
             circ_edges = [ed for ed in boss.Edges if _curve_is(ed, Part.Circle)]
             if circ_edges:
-                boss = boss.makeFillet(0.015, circ_edges)
+                boss = _safe_fillet(boss, circ_edges, 0.015)
         except Exception:
             pass
         shape = boss
@@ -186,11 +186,21 @@ def makeWingNut(self, fa):
         # Solution: anchor points v2 / v3 penetrate 30 % into the boss wall.
         # This is always safe: 30 % < 100 %, so anchors stay outside bore_r.
         #
-        # v2 = wing root at the cylindrical barrel  (Z = Z_cyl, x ≈ rE)
-        # v3 = wing root at the conical rim          (Z = G,     x ≈ rD)
+        # Shift the top of the wing root down the conical body to prevent the inner bore/chamfer
+        # from cutting through the wing and exposing the recess pocket.
+        shift_frac = 0.12
+        Z_top_wing = G - G * shift_frac
+        if G - Z_cyl > 1e-5:
+            r_boss_top = rE - (rE - rD) * (Z_top_wing - Z_cyl) / (G - Z_cyl)
+        else:
+            r_boss_top = rD
+        wall_top = max(r_boss_top - bore_r_approx, 0.05)
+
         PEN_FRAC = 0.30
-        v2 = Base.Vector(rE - wall_E * PEN_FRAC, 0.0, Z_cyl)
-        v3 = Base.Vector(rD - wall_D * PEN_FRAC, 0.0, G)
+        x2_val = math.sqrt(max((rE - wall_E * PEN_FRAC)**2 - (C / 2.0)**2, 0.0))
+        x3_val = math.sqrt(max((r_boss_top - wall_top * PEN_FRAC)**2 - (C / 2.0)**2, 0.0))
+        v2 = Base.Vector(x2_val, 0.0, Z_cyl)
+        v3 = Base.Vector(x3_val, 0.0, Z_top_wing)
 
         # ── 3. WING OUTLINE (bezier teardrop profile) ─────────────────────────
         # All X coordinates are rD + W*fraction so they scale with every size.
@@ -308,6 +318,23 @@ def makeWingNut(self, fa):
             if edges_to_fillet:
                 wing = _safe_fillet(wing, edges_to_fillet, fillet_rad)
 
+            # Fillet the recess floor edges
+            floor_edges = []
+            for e in wing.Edges:
+                if hasattr(e, "BoundBox"):
+                    if (e.BoundBox.YMax - e.BoundBox.YMin) < 1e-4:
+                        if abs(abs(e.CenterOfMass.y) - (C / 4.0)) < 1e-4:
+                            floor_edges.append(e)
+            if floor_edges:
+                try:
+                    # For recess floor, must fillet all edges together or not at all
+                    # to prevent invalid shell topology (gaps/intersections at corners).
+                    trial = wing.makeFillet(fillet_rad, floor_edges)
+                    if trial.isValid() and trial.Volume > 1e-9:
+                        wing = trial
+                except Exception:
+                    pass
+
         # ── 6. ASSEMBLE — cascading fallback ──────────────────────────────────
         def safe_fuse(base_s, wing_s):
             if wing_s is None or not wing_s.isValid() or wing_s.Volume <= 1e-9:
@@ -353,8 +380,12 @@ def makeWingNut(self, fa):
             shape = _safe_fillet(shape, root_edges, root_rad)
 
         try:
-            cleaned = shape.removeSplitter()
-            if cleaned.isValid() and cleaned.Volume > 1e-9:
+            # Copy shape before removeSplitter to prevent in-place OCC memory corruption if it fails
+            temp_shape = shape.copy()
+            cleaned = temp_shape.removeSplitter()
+            # Only accept the cleaned shape if it is valid and does not have corrupted geometry/volume.
+            # removeSplitter should not alter the volume significantly (certainly not exceeding 10% change).
+            if cleaned.isValid() and 1e-9 < cleaned.Volume < shape.Volume * 1.1:
                 shape = cleaned
         except Exception:
             pass
@@ -383,7 +414,7 @@ def makeWingNut(self, fa):
         try:
             circ_edges = [ed for ed in boss.Edges if _curve_is(ed, Part.Circle)]
             if circ_edges:
-                boss = boss.makeFillet(0.015, circ_edges)
+                boss = _safe_fillet(boss, circ_edges, 0.015)
         except Exception:
             pass
         shape = boss
@@ -467,10 +498,7 @@ def makeWingNut(self, fa):
                     if e.CenterOfMass.x > (rF * 1.05):
                         edges_to_fillet.append(e)
         if edges_to_fillet:
-            try:
-                wing = wing.makeFillet(fillet_rad, edges_to_fillet)
-            except Exception:
-                pass
+            wing = _safe_fillet(wing, edges_to_fillet, fillet_rad)
 
         shape = shape.fuse(wing)
         wing_left = wing.copy()
@@ -490,10 +518,7 @@ def makeWingNut(self, fa):
             except Exception:
                 pass
         if root_edges:
-            try:
-                shape = shape.makeFillet(root_rad, root_edges)
-            except Exception:
-                pass
+            shape = _safe_fillet(shape, root_edges, root_rad)
 
         try:
             shape = shape.removeSplitter()
@@ -516,7 +541,7 @@ def makeWingNut(self, fa):
         try:
             circ_edges = [ed for ed in boss.Edges if _curve_is(ed, Part.Circle)]
             if circ_edges:
-                boss = boss.makeFillet(P / 2.0, circ_edges)
+                boss = _safe_fillet(boss, circ_edges, P / 2.0)
         except Exception:
             pass
         shape = boss
@@ -614,11 +639,8 @@ def makeWingNut(self, fa):
                     on_mating = False; break
             if not on_mating:
                 edges_to_fillet.append(e)
-        try:
-            if edges_to_fillet:
-                wing = wing.makeFillet(wing_r, edges_to_fillet)
-        except Exception:
-            pass
+        if edges_to_fillet:
+            wing = _safe_fillet(wing, edges_to_fillet, wing_r)
 
         shape = shape.fuse(wing)
         wing.rotate(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), 180)
@@ -644,7 +666,7 @@ def makeWingNut(self, fa):
         try:
             circ_edges = [ed for ed in boss.Edges if _curve_is(ed, Part.Circle)]
             if circ_edges:
-                boss = boss.makeFillet(P / 2.0, circ_edges)
+                boss = _safe_fillet(boss, circ_edges, P / 2.0)
         except Exception:
             pass
         shape = boss
@@ -724,11 +746,8 @@ def makeWingNut(self, fa):
                     on_mating = False; break
             if not on_mating:
                 edges_to_fillet.append(e)
-        try:
-            if edges_to_fillet:
-                wing = wing.makeFillet(wing_r, edges_to_fillet)
-        except Exception:
-            pass
+        if edges_to_fillet:
+            wing = _safe_fillet(wing, edges_to_fillet, wing_r)
 
         shape = shape.fuse(wing)
         wing.rotate(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), 180)
@@ -748,10 +767,7 @@ def makeWingNut(self, fa):
         fm.AddPoint(d3/2,   m)
         fm.AddPoint(0.0,    m)
         shape = self.RevolveZ(fm.GetFace())
-        try:
-            shape = shape.makeFillet(P / 2, shape.Edges)
-        except Exception:
-            pass
+        shape = _safe_fillet(shape, list(shape.Edges), P / 2)
 
         fm.Reset()
         fm.AddPoint(d2/4, g * 0.75)
@@ -760,10 +776,7 @@ def makeWingNut(self, fa):
         fm.AddArc((d2+e)/4, 0.25*h, d2/4, g/4)
         wing = fm.GetFace().extrude(Base.Vector(0.0, g, 0.0))
         wing.translate(Base.Vector(0.0, -g/2, 0.0))
-        try:
-            wing = wing.makeFillet(wing_r, wing.Edges)
-        except Exception:
-            pass
+        wing = _safe_fillet(wing, list(wing.Edges), wing_r)
         shape = shape.fuse(wing)
         wing.rotate(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), 180)
         shape = shape.fuse(wing)

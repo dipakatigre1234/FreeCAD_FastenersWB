@@ -390,6 +390,7 @@ FSScrewCommandTable = {
     "ASMEB18.21.1.11A":(translate("FastenerCmd", "UN washers, basic series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.11B":(translate("FastenerCmd", "UN washers, narrow series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.11C":(translate("FastenerCmd", "UN washers, wide series"), WasherGroup, WasherParameters),
+    "ASMEB18.21.1.13": (translate("FastenerCmd", "Fender washers"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12A":(translate("FastenerCmd", "UN washers, narrow series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12B":(translate("FastenerCmd", "UN washers, regular series"), WasherGroup, WasherParameters),
     "ASMEB18.21.1.12C":(translate("FastenerCmd", "UN washers, wide series"), WasherGroup, WasherParameters),

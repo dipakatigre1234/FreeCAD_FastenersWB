@@ -386,6 +386,7 @@ screwTables = {
     "ASMEB18.21.1.11A": ("Washer", "makeWasher"),
     "ASMEB18.21.1.11B": ("Washer", "makeWasher"),
     "ASMEB18.21.1.11C": ("Washer", "makeWasher"),
+    "ASMEB18.21.1.13":  ("Washer", "makeWasher"),
     "ASMEB18.21.1.12A": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12B": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12C": ("Washer", "makeWasher"),

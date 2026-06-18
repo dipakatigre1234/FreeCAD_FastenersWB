@@ -382,6 +382,7 @@ screwTables = {
     "DIN580": ("Screw", "makeDIN580Eyebolt"),         # DIN 580 metric lifting eye bolt
     "ISO3266": ("Screw", "makeISO3266Eyebolt"),       # ISO 3266 metric lifting eye bolt
     "DIN604": ("Screw", "makeNibBolt"),               # DIN 604 countersunk bolt with nib
+    "DIN608": ("Screw", "makeDIN608CarriageBolt"),    # DIN 608 flat countersunk head square neck bolt
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),

@@ -294,6 +294,7 @@ FSScrewCommandTable = {
     "DIN580":(translate("FastenerCmd", "Lifting eye bolt"), OtherHeadGroup, EyeboltParameters),
     "ISO3266":(translate("FastenerCmd", "Lifting eye bolt"), OtherHeadGroup, EyeboltParameters),
     "DIN604":(translate("FastenerCmd", "Countersunk bolt with nib"), OtherHeadGroup, ScrewParametersLC),
+    "DIN608":(translate("FastenerCmd", "Flat countersunk head square neck bolt"), OtherHeadGroup, ScrewParametersLC),
     "DIN478":   (translate("FastenerCmd", "Square head bolts with collar"), OtherHeadGroup, ScrewParametersLC),
     "DIN603":   (translate("FastenerCmd", "Mushroom head square neck bolts"), OtherHeadGroup, ScrewParametersLC),
     "ISO2342":  (translate("FastenerCmd", "headless screws with shank"), OtherHeadGroup, ScrewParametersLC),

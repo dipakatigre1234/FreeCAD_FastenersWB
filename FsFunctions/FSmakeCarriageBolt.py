@@ -168,3 +168,130 @@ def makeCarriageBolt(self, fa):
         p_solid = p_solid.cut(thread_cutter)
 
     return Part.Solid(p_solid)
+
+
+def makeDIN608CarriageBolt(self, fa):
+    """Create a DIN 608 flat countersunk head square neck bolt.
+
+    Geometry is a 1:1 port of the DIN 608 master macro.  The M10-specific
+    constants in that macro are replaced by values pulled from FsData via
+    fa.dimTable; values the standard gives as max/min pairs (dk, ds, fn, v)
+    are averaged to their mean.  Length is user-selectable and an optional
+    ISO metric thread is cut on the lower b portion of the shank.
+
+    DIN608def.csv column order (fa.dimTable):
+      P, b, dk_max, dk_min, ds_max, ds_min, fn_max, fn_min, r, v_max, v_min, k
+    where
+      P       : thread pitch
+      b       : thread length
+      dk      : head diameter
+      ds      : shank diameter            (macro: d)
+      fn      : head + square-neck height (macro: S)
+      r       : square corner radius      (macro: R_corner)
+      v       : width across the square   (macro: B)
+      k       : countersunk head height   (taken from the matching DIN 604
+                head; the standard tabulates fn, not k separately)
+
+    Coordinate origin (matches the macro):
+      z = 0    top bearing face of the countersunk head
+      z = -k   head / square-neck transition
+      z = -S   square-neck / shaft transition
+      z = -L   shaft tip
+    """
+    SType = fa.baseType
+    if SType != "DIN608":
+        raise NotImplementedError(f"Unknown carriage bolt type: {SType}")
+    if fa.dimTable is None:
+        raise ValueError("DIN608 carriage bolt requires a standard diameter")
+
+    length = fa.calc_len
+
+    # ── CSV dimensions ────────────────────────────────────────────────────
+    (P_tbl, b,
+     dk_max, dk_min,
+     ds_max, ds_min,
+     fn_max, fn_min,
+     r, v_max, v_min, k) = (float(v) for v in fa.dimTable)
+
+    # Mean values for the max/min pairs (per the standard's tolerance band)
+    dk = (dk_max + dk_min) / 2.0     # head diameter
+    d  = (ds_max + ds_min) / 2.0     # shank diameter (macro: d)
+    S  = (fn_max + fn_min) / 2.0     # head + square-neck height (macro: S)
+    B  = (v_max + v_min) / 2.0       # width across the square (macro: B)
+    R_corner = r                     # square corner radius (single value)
+    angle = 90.0                     # countersink included angle
+    bottom_chamfer_size = d / 10.0
+
+    # ── Pitch + thread length ─────────────────────────────────────────────
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    pitch = raw_pitch if (raw_pitch is not None and raw_pitch > 0.0) else P_tbl
+
+    L_t = b
+    raw_tlen = getattr(fa, "calc_thread_length", 0.0) or 0.0
+    if raw_tlen > 0.0:
+        L_t = float(raw_tlen)
+    # Thread must not run into the square neck — clamp to the plain shaft
+    L_t = max(0.0, min(L_t, length - S))
+
+    # ── 1. Shaft with bottom chamfer ──────────────────────────────────────
+    shaft_len  = length - S
+    shaft_main = Part.makeCylinder(d / 2.0, shaft_len - bottom_chamfer_size)
+    shaft_main.translate(FreeCAD.Vector(0, 0, -length + bottom_chamfer_size))
+
+    shaft_chamfer = Part.makeCone(d / 2.0 - bottom_chamfer_size, d / 2.0, bottom_chamfer_size)
+    shaft_chamfer.translate(FreeCAD.Vector(0, 0, -length))
+
+    shaft = shaft_main.fuse(shaft_chamfer)
+
+    # ── 2. Countersunk head with cylindrical flat ─────────────────────────
+    half_angle_rad = math.radians(angle / 2.0)
+    cone_height    = ((dk - d) / 2.0) / math.tan(half_angle_rad)
+    f_margin       = k - cone_height          # cylindrical flat under the top
+
+    head_cone = Part.makeCone(d / 2.0, dk / 2.0, cone_height)
+    head_cone.translate(FreeCAD.Vector(0, 0, -k))
+
+    if f_margin > 1e-6:
+        head_flat = Part.makeCylinder(dk / 2.0, f_margin)
+        head_flat.translate(FreeCAD.Vector(0, 0, -f_margin))
+        head = head_flat.fuse(head_cone)
+    else:
+        head = head_cone
+
+    # ── 3. Square neck with bottom conical taper ──────────────────────────
+    R_diag  = (B / math.sqrt(2.0)) + 0.5      # diagonal radius enclosing the square
+    H_taper = R_diag - d / 2.0                # height of the 45° bottom transition
+
+    neck_cyl = Part.makeCylinder(R_diag, S - H_taper)
+    neck_cyl.translate(FreeCAD.Vector(0, 0, -S + H_taper))
+
+    neck_taper = Part.makeCone(d / 2.0, R_diag, H_taper)
+    neck_taper.translate(FreeCAD.Vector(0, 0, -S))
+
+    neck_raw = neck_cyl.fuse(neck_taper)
+
+    outerBox = Part.makeBox(dk * 4, dk * 4, S * 3)
+    outerBox.translate(FreeCAD.Vector(-dk * 2, -dk * 2, -S * 2))
+
+    innerBox = Part.makeBox(B, B, S * 4)
+    innerBox.translate(FreeCAD.Vector(-B / 2.0, -B / 2.0, -S * 2.5))
+
+    vertical_edges = [e for e in innerBox.Edges
+                      if abs(e.BoundBox.ZLength - S * 4) < 0.01]
+    if vertical_edges and R_corner > 1e-4:
+        innerBox = innerBox.makeFillet(R_corner, vertical_edges)
+
+    tool       = outerBox.cut(innerBox)
+    neck_final = neck_raw.cut(tool)
+
+    # ── 4. Final assembly ─────────────────────────────────────────────────
+    p_solid = shaft.fuse(neck_final).fuse(head)
+    p_solid = p_solid.removeSplitter()
+
+    # ── 5. Optional ISO metric thread on the lower b portion ──────────────
+    if getattr(fa, "Thread", False) and L_t > 1e-6 and pitch > 0:
+        thread_cutter = self.CreateBlindThreadCutter(d, pitch, L_t)
+        thread_cutter.translate(Base.Vector(0.0, 0.0, -(length - L_t)))
+        p_solid = p_solid.cut(thread_cutter)
+
+    return Part.Solid(p_solid)

@@ -386,6 +386,34 @@ def makeEyeboltShoulder(self, fa):
 #      r3 : undercut groove-floor fillet radius
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _fillet_with_backoff(shape, edges, radius, label=""):
+    """makeFillet that never raises and never asks for more than the geometry
+    can give.
+
+    OCCT returns ``StdFail_NotDone`` whenever the requested radius is larger
+    than an adjacent face/edge can accommodate.  The DIN 580 standard radii
+    (r1, r3) are full forged-transition radii and are frequently bigger than
+    the small local steps the macro geometry actually offers, so we step the
+    radius down until OCCT accepts it (or give up and return the input shape
+    untouched — the fillet is cosmetic).
+    """
+    if not edges or radius is None or radius <= 1e-4:
+        return shape
+    for factor in (1.0, 0.75, 0.5, 0.35, 0.22, 0.12):
+        r = radius * factor
+        if r < 1e-3:
+            break
+        try:
+            return shape.makeFillet(r, edges)
+        except Exception:
+            continue
+    if label:
+        FreeCAD.Console.PrintWarning(
+            f"DIN580 {label} fillet skipped (geometry too tight)\n"
+        )
+    return shape
+
+
 def makeDIN580Eyebolt(self, fa):
     """Create a DIN 580 forged lifting eye bolt.
 
@@ -460,7 +488,10 @@ def makeDIN580Eyebolt(self, fa):
 
     base_solid = make_revolve_profile_clean()
 
-    # R3 fillet on the inner concave groove-floor edge (low-risk: simple revolve)
+    # R3 fillet on the inner concave groove-floor edge (low-risk: simple revolve).
+    # The concave corner sits between the groove floor (radial width
+    # (d_shank - g)/2) and the groove wall (height f); the fillet cannot exceed
+    # the smaller of those, so clamp before applying.
     r3_edges = []
     for edge in base_solid.Edges:
         bbox = edge.BoundBox
@@ -469,11 +500,8 @@ def makeDIN580Eyebolt(self, fa):
         edge_radius = bbox.XMax
         if abs(edge_radius - g / 2.0) < 0.1 and edge_radius < d_shank / 2.0 - 0.1:
             r3_edges.append(edge)
-    if r3_edges:
-        try:
-            base_solid = base_solid.makeFillet(r3, r3_edges)
-        except Exception as ex:
-            FreeCAD.Console.PrintWarning(f"DIN580 R3 fillet skipped: {ex}\n")
+    r3_safe = min(r3, 0.8 * min((d_shank - g) / 2.0, f))
+    base_solid = _fillet_with_backoff(base_solid, r3_edges, r3_safe, "R3")
 
     # ─────────────────────────────────────────────────────────────────────
     # 2. Anti-twist forged eye — closed B-spline loft, thickness sweeps k->m
@@ -553,11 +581,11 @@ def makeDIN580Eyebolt(self, fa):
         if bbox.ZMin > e * 0.08 and bbox.ZMax < (e + r1 + m):
             if (bbox.XMax - bbox.XMin) > d4 * 0.25 or (bbox.YMax - bbox.YMin) > d4 * 0.25:
                 r1_edges.append(edge)
-    if r1_edges:
-        try:
-            final_solid = final_solid.makeFillet(r1, r1_edges)
-        except Exception as ex:
-            FreeCAD.Console.PrintWarning(f"DIN580 R1 fillet skipped: {ex}\n")
+    # The standard r1 is the full forged saddle radius and is usually larger
+    # than the room between the eye arms and the shoulder top; clamp it to the
+    # local shoulder height / eye thickness, then back off if OCCT still balks.
+    r1_safe = min(r1, 0.6 * min(e, k))
+    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1_safe, "R1")
 
     # ─────────────────────────────────────────────────────────────────────
     # 6. Optional ISO metric threading on the straight shank below the groove

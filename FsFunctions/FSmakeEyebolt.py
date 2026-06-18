@@ -399,7 +399,11 @@ def _fillet_with_backoff(shape, edges, radius, label=""):
     """
     if not edges or radius is None or radius <= 1e-4:
         return shape
-    for factor in (1.0, 0.75, 0.5, 0.35, 0.22, 0.12):
+    factors = (1.0, 0.75, 0.5, 0.35, 0.22, 0.12, 0.06, 0.03)
+
+    # try to fillet every edge in one shot, stepping the radius down until
+    # OCCT accepts it
+    for factor in factors:
         r = radius * factor
         if r < 1e-3:
             break
@@ -407,9 +411,10 @@ def _fillet_with_backoff(shape, edges, radius, label=""):
             return shape.makeFillet(r, edges)
         except Exception:
             continue
+
     if label:
         FreeCAD.Console.PrintWarning(
-            f"DIN580 {label} fillet skipped (geometry too tight)\n"
+            f"{label} fillet skipped (geometry too tight)\n"
         )
     return shape
 
@@ -501,7 +506,7 @@ def makeDIN580Eyebolt(self, fa):
         if abs(edge_radius - g / 2.0) < 0.1 and edge_radius < d_shank / 2.0 - 0.1:
             r3_edges.append(edge)
     r3_safe = min(r3, 0.8 * min((d_shank - g) / 2.0, f))
-    base_solid = _fillet_with_backoff(base_solid, r3_edges, r3_safe, "R3")
+    base_solid = _fillet_with_backoff(base_solid, r3_edges, r3_safe, "DIN580 R3")
 
     # ─────────────────────────────────────────────────────────────────────
     # 2. Anti-twist forged eye — closed B-spline loft, thickness sweeps k->m
@@ -585,7 +590,7 @@ def makeDIN580Eyebolt(self, fa):
     # than the room between the eye arms and the shoulder top; clamp it to the
     # local shoulder height / eye thickness, then back off if OCCT still balks.
     r1_safe = min(r1, 0.6 * min(e, k))
-    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1_safe, "R1")
+    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1_safe, "DIN580 R1")
 
     # ─────────────────────────────────────────────────────────────────────
     # 6. Optional ISO metric threading on the straight shank below the groove
@@ -762,7 +767,7 @@ def makeISO3266Eyebolt(self, fa):
         if (e + 0.1) < cz < (dome_top_z + 0.1):
             if (bbox.XMax - bbox.XMin) > (E / 2.0) or (bbox.YMax - bbox.YMin) > (E / 2.0):
                 r1_edges.append(edge)
-    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1, "saddle")
+    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1, "ISO3266 saddle")
 
     # ─────────────────────────────────────────────────────────────────────
     # 5. Optional ISO metric threading on the shank below distance s
@@ -772,6 +777,183 @@ def makeISO3266Eyebolt(self, fa):
         tl = max(H - s, 0.0)
         if P and P > 0 and tl > 1e-6:
             final_solid = _TM.cut_thread(final_solid, fa, d, tl, -s, P)
+
+    try:
+        return Part.Solid(final_solid)
+    except Exception:
+        return final_solid
+
+
+def makeDIN582Eyenut(self, fa):
+    """Create a DIN 582 lifting eye nut.
+
+    Geometry is a 1:1 port of the DIN 582 master macro.  The M10-specific
+    constants in that macro are replaced by values pulled from FsData via
+    fa.dimTable; values the standard gives as min/max pairs (d2, d3, d4, e,
+    h, k, m) are averaged to their mean.  Because it is a nut, the bore is
+    internally threaded (optional) instead of carrying an external thread.
+
+    DIN582def.csv column order (fa.dimTable):
+      P, d2_min, d2_max, d3_min, d3_max, d4_min, d4_max, e_min, e_max,
+      h_min, h_max, k_min, k_max, m_min, m_max, r
+    where
+      P    : coarse (or x6 fine) thread pitch — bore thread default
+      d2   : shoulder diameter at the base
+      d3   : eye outer diameter
+      d4   : eye inner diameter
+      e    : shoulder height at outer edge
+      h    : total height (flat bottom → top of eye)
+      k    : eye thickness at the top
+      m    : eye thickness at the sides
+      r    : forged saddle radius (clamped to a CAD-safe value)
+
+    Coordinate origin (matches the macro):
+      z = 0   flat bottom bearing face of the shoulder
+      +Z      up through the eye
+    """
+    SType = fa.baseType
+    if SType != "DIN582":
+        raise NotImplementedError(f"Unknown eye nut type: {SType}")
+    if fa.dimTable is None:
+        raise ValueError("DIN582 eye nut requires a standard diameter")
+
+    # ── CSV dimensions ────────────────────────────────────────────────────
+    (P_tbl,
+     d2_min, d2_max,
+     d3_min, d3_max,
+     d4_min, d4_max,
+     e_min,  e_max,
+     h_min,  h_max,
+     k_min,  k_max,
+     m_min,  m_max,
+     r) = (float(v) for v in fa.dimTable)
+
+    # Mean values for the min/max pairs (per the standard's tolerance band)
+    d2 = (d2_min + d2_max) / 2.0     # shoulder diameter at the base
+    d3 = (d3_min + d3_max) / 2.0     # eye outer diameter
+    d4 = (d4_min + d4_max) / 2.0     # eye inner diameter
+    e  = (e_min + e_max) / 2.0       # shoulder height at outer edge
+    h  = (h_min + h_max) / 2.0       # total height
+    k  = (k_min + k_max) / 2.0       # eye top thickness
+    m  = (m_min + m_max) / 2.0       # eye side thickness
+
+    D1 = self.getDia(fa.calc_diam, True)     # nominal thread (bore) diameter
+
+    top_draft_deg = 12.0
+    chamfer_depth = 1.5
+
+    # ── 1. Solid shoulder base (flat bottom at z = 0, revolved) ───────────
+    side_inset = e / 20.0
+    top_rise   = (d2 / 2.0 - side_inset) * math.tan(math.radians(top_draft_deg))
+
+    p_center_bottom = FreeCAD.Vector(0,                0, 0)
+    p_outer_bottom  = FreeCAD.Vector(d2 / 2.0,         0, 0)
+    p_outer_top     = FreeCAD.Vector(d2 / 2.0 - side_inset, 0, e)
+    p_center_top    = FreeCAD.Vector(0,                0, e + top_rise)
+
+    base_wire = Part.Wire([
+        Part.makeLine(p_center_bottom, p_outer_bottom),
+        Part.makeLine(p_outer_bottom,  p_outer_top),
+        Part.makeLine(p_outer_top,     p_center_top),
+        Part.makeLine(p_center_top,    p_center_bottom),
+    ])
+    base_solid = Part.Face(base_wire).revolve(
+        FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360)
+
+    # ── 2. Anti-twist B-spline eye (variable forged thickness k→m) ────────
+    spine_r  = (d3 + d4) / 4.0
+    spine_z  = h - (d3 / 2.0)
+    radial_w = (d3 - d4) / 2.0
+
+    wires = []
+    for deg in range(0, 360, 10):
+        alpha = math.radians(deg)
+        thickness = k + (m - k) * (1 - math.cos(alpha)) / 2.0
+        r_axial  = thickness / 2.0
+        r_radial = radial_w / 2.0
+
+        cx = spine_r * math.sin(alpha)
+        cz = spine_z + spine_r * math.cos(alpha)
+        center = FreeCAD.Vector(cx, 0, cz)
+
+        radial_dir = FreeCAD.Vector(math.sin(alpha), 0, math.cos(alpha))
+        axial_dir  = FreeCAD.Vector(0, 1, 0)
+
+        points = []
+        for i in range(16):
+            theta = math.radians(i * 360.0 / 16.0)
+            lx = r_radial * math.cos(theta)
+            ly = r_axial * math.sin(theta)
+            points.append(center + (radial_dir * lx) + (axial_dir * ly))
+
+        spline = Part.BSplineCurve()
+        spline.interpolate(points, True)
+        wires.append(Part.Wire(spline.toShape()))
+
+    eye_solid = Part.makeLoft(wires, True, False, True)
+
+    # ── 3. Fuse base + eye ────────────────────────────────────────────────
+    fused_body = base_solid.fuse(eye_solid).removeSplitter()
+
+    # ── 4. Bore + 120° lead-in chamfer (+ optional internal thread) ───────
+    bore_height = e + top_rise + 5.0
+    threaded = bool(getattr(fa, "Thread", False)) and P_tbl > 0.0
+
+    # pitch override (Thread_Pitch_Nut / custom pitch), else CSV coarse pitch
+    P = P_tbl
+    raw_pitch = getattr(fa, "calc_pitch", None)
+    if raw_pitch is not None and raw_pitch > 0.0:
+        P = raw_pitch
+    pn = getattr(fa, "Thread_Pitch_Nut", None)
+    if pn:
+        try:
+            P = float(pn)
+        except Exception:
+            pass
+
+    if threaded:
+        bore_r = D1 / 2.0 - (P * cos30) * 5.0 / 8.0   # minor (tapping) radius
+    else:
+        bore_r = D1 / 2.0                             # plain clearance hole
+
+    bore_cyl = Part.makeCylinder(bore_r, bore_height)
+
+    # 120° countersink lead-in at the bottom face
+    r_chamfer_bottom = bore_r + chamfer_depth * math.tan(math.radians(60.0))
+    chamfer_cone = Part.makeCone(r_chamfer_bottom, bore_r, chamfer_depth)
+
+    cutting_tool = bore_cyl.fuse(chamfer_cone)
+    final_solid  = fused_body.cut(cutting_tool).removeSplitter()
+
+    if threaded:
+        try:
+            thread_dia    = D1 + 0.05 * P
+            thread_len    = e + top_rise + P
+            thread_cutter = self.CreateInnerThreadCutter(thread_dia, P, thread_len)
+            final_solid   = final_solid.cut(thread_cutter)
+        except Exception:
+            FreeCAD.Console.PrintWarning(
+                "DIN582 internal thread skipped (cutter failed)\n")
+
+    # ── 5. Saddle fillet between the cone shoulder and the B-spline eye ────
+    # Find the edges shared by a Cone face (shoulder) and a BSpline face (eye).
+    target_edges = []
+    for edge in final_solid.Edges:
+        face_types = []
+        for face in final_solid.Faces:
+            for fe in face.Edges:
+                if fe.isSame(edge):
+                    if hasattr(face, "Surface"):
+                        face_types.append(face.Surface.TypeId)
+                    break
+        has_base = any("Cone" in t for t in face_types)
+        has_eye  = any("BSpline" in t for t in face_types)
+        if has_base and has_eye:
+            target_edges.append(edge)
+
+    # Clamp the standard forged radius to what the local saddle can hold.
+    r_safe = min(r, 0.25 * radial_w, 0.25 * k)
+    final_solid = _fillet_with_backoff(final_solid, target_edges, r_safe, "DIN582 saddle")
 
     try:
         return Part.Solid(final_solid)

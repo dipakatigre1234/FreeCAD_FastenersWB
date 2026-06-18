@@ -163,6 +163,53 @@ def _dia_key_from_mm(dia_mm):
     return _norm(str(dia_mm))
 
 
+def _dia_key(dia_str):
+    """Normalised CSV dia key from a diameter string.
+
+    Handles the 'M' prefix and the fine-pitch 'xN' suffix so that
+    'M72x6', '72x6', 'M72' and '72.0' all key to '72'.
+    """
+    s = str(dia_str or "").strip().lstrip("Mm")
+    if "x" in s.lower():
+        s = s.lower().split("x", 1)[0]
+    return _norm(s)
+
+
+def _dia_mm(dia_str):
+    """Nominal diameter as a float mm, suffix-aware ('M72x6' -> 72.0)."""
+    try:
+        s = str(dia_str or "").strip().lstrip("Mm")
+        if "x" in s.lower():
+            s = s.lower().split("x", 1)[0]
+        return float(s)
+    except Exception:
+        return 6.0
+
+
+def suffix_pitch(dia_str):
+    """Named fine pitch from an 'xN' suffix, e.g. 'M100x6' -> '6'. Else None."""
+    s = str(dia_str or "").strip().lower()
+    if "x" in s:
+        try:
+            return _norm(s.split("x", 1)[1])
+        except Exception:
+            return None
+    return None
+
+
+def default_pitch_for_dia(dia_str):
+    """Preferred default pitch string for the dropdown: the 'xN' suffix pitch
+    if it is actually available for this dia, else the smallest pitch, else None.
+    """
+    pitches = valid_pitches_for_dia(dia_str)
+    if not pitches:
+        return None
+    sp = suffix_pitch(dia_str)
+    if sp and sp in pitches:
+        return sp
+    return pitches[0]
+
+
 # ── Dropdown helpers ──────────────────────────────────────────────────────────
 
 def valid_pitches_for_dia(dia_str):
@@ -170,8 +217,7 @@ def valid_pitches_for_dia(dia_str):
 
     dia_str may be "M6", "6.0", "6" — all normalised to float key.
     """
-    dia_clean = dia_str.strip().lstrip("Mm")
-    dia_key   = _norm(dia_clean)
+    dia_key   = _dia_key(dia_str)
     pitches   = sorted(
         {k[1] for k in _internal_table() if k[0] == dia_key},
         key=lambda x: float(x)
@@ -183,7 +229,7 @@ def valid_classes_for_dia_pitch(dia_str, pitch_str):
     """Return sorted list of class strings for this dia+pitch.
     Returns e.g. ['4H', '5H', '6G', '6H', '7H'].
     """
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
+    dia_key = _dia_key(dia_str)
     p_key   = _norm(str(pitch_str).strip())
     classes = sorted({k[2] for k in _internal_table()
                       if k[0] == dia_key and k[1] == p_key})
@@ -201,7 +247,7 @@ def d1max_from_table(dia_str, pitch_str, cls_str):
     pitch_str : pitch string mm, e.g. "1.0", "1"
     cls_str   : class string, e.g. "6H", "4H"
     """
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
+    dia_key = _dia_key(dia_str)
     p_key   = _norm(str(pitch_str).strip())
     return _internal_table().get((dia_key, p_key, str(cls_str).strip()))
 
@@ -220,10 +266,7 @@ def bore_dia_from_table(fa, dia_str, pitch_str, cls_str):
     Falls back to (nominal_mm - 1.0825×P) if not found in CSV.
     """
     d1max = d1max_from_table(dia_str, pitch_str, cls_str)
-    try:
-        dia_mm = float(str(dia_str).strip().lstrip("Mm"))
-    except Exception:
-        dia_mm = 6.0
+    dia_mm = _dia_mm(dia_str)
 
     if d1max is None:
         # Fallback: ISO formula for D1 = nominal - 1.0825 × P
@@ -263,7 +306,7 @@ def resolve_nut_pitch(fa):
       3. Coarsest pitch from CSV for this dia
     """
     dia_str = str(getattr(fa, "calc_diam", "") or "")
-    dia_key = _norm(dia_str.strip().lstrip("Mm"))
+    dia_key = _dia_key(dia_str)
 
     p_prop = str(getattr(fa, "Thread_Pitch_Nut", "") or "")
     if p_prop == "Custom":

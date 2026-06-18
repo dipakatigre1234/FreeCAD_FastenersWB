@@ -356,6 +356,7 @@ FSScrewCommandTable = {
     "DIN7967":  (translate("FastenerCmd", "Self locking counter nuts"), NutGroup, WasherParameters),
     "EN1661":   (translate("FastenerCmd", "Hexagon nuts with flange"), NutGroup, NutParameters),
     "GOST11860-1":(translate("FastenerCmd", "(Type 1) Cap nuts"), NutGroup, NutParameters),
+    "DIN582":   (translate("FastenerCmd", "Lifting eye nut"), NutGroup, NutParameters),
     "ISO4032":  (translate("FastenerCmd", "Hexagon nuts, Style 1"), NutGroup, NutParameters),
     "ISO4033":  (translate("FastenerCmd", "Hexagon nuts, Style 2"), NutGroup, NutParameters),
     "ISO4034":  (translate("FastenerCmd", "Hexagon nuts, Style 1"), NutGroup, NutParameters),
@@ -1319,7 +1320,7 @@ class FSScrewObject(FSBaseObject):
                             "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
                     ).Thread_Pitch_Nut = _np_enum
                     try:
-                        obj.Thread_Pitch_Nut = _np[0]
+                        obj.Thread_Pitch_Nut = _TMI.default_pitch_for_dia(_dia_nut) or _np[0]
                     except Exception:
                         pass
                     obj.setEditorMode("Thread_Pitch_Nut", 2)
@@ -1774,14 +1775,15 @@ class FSScrewObject(FSBaseObject):
                         translate("FastenerCmd",
                             "Thread_Pitch_Nut (mm) — from ISO 965 internal thread table")
                     ).Thread_Pitch_Nut = (list(_np) + ["Custom"])
-                    try: fp.Thread_Pitch_Nut = _np[0]
+                    try: fp.Thread_Pitch_Nut = _TMI.default_pitch_for_dia(_dia_pre) or _np[0]
                     except Exception: pass
                 else:
                     try:
                         _cur_np = str(fp.Thread_Pitch_Nut)
                         _np_enum = list(_np) + ["Custom"]
+                        _def_np = _TMI.default_pitch_for_dia(_dia_pre) or _np[0]
                         fp.Thread_Pitch_Nut = _np_enum
-                        fp.Thread_Pitch_Nut = _cur_np if _cur_np in _np_enum else _np[0]
+                        fp.Thread_Pitch_Nut = _cur_np if _cur_np in _np_enum else _def_np
                     except Exception: pass
 
             if not hasattr(fp, "Thread_Pitch_Nut_Custom"):

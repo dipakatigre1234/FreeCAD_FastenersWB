@@ -262,6 +262,7 @@ screwTables = {
     "DIN465":          ("Screw", "makeThumbScrew"),
     "DIN653":          ("Screw", "makeThumbScrew"),
     "WOOTZ_ADJ_BREMS": ("Screw", "makeThumbScrew"),
+    "DIN582": ("Nut", "makeDIN582Eyenut"),           # DIN 582 lifting eye nut
     "ISO4032": ("Nut", "makeHexNut"),
     "ISO4033": ("Nut", "makeHexNut"),
     "ISO4034": ("Nut", "makeHexNut"),

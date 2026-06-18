@@ -17,6 +17,7 @@
 """
 from screw_maker import *
 import FSThreadingASME as _TA
+import FSThreadingMetric as _TM
 
 
 def makeEyebolt(self, fa):
@@ -355,3 +356,219 @@ def makeEyeboltShoulder(self, fa):
         )
 
     return Part.Solid(eyebolt_solid)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DIN 580 — Lifting Eye Bolt (metric, forged)
+#
+#  Geometry is a 1:1 port of din_580_eyebolt.FCMacro.  Every M6-specific
+#  constant in that macro is replaced by a value pulled from FsData via
+#  fa.dimTable; values that the standard gives as max/min pairs are stored in
+#  the CSV pre-averaged (mean = (max + min) / 2), so the columns read here are
+#  already the mean values.
+#
+#  CSV  DIN580def.csv  column order (fa.dimTable):
+#      d1, d2, d3, d4, e, f, dg, h, k, l, m, r1, r2, r3
+#  where
+#      d1 : thread nominal diameter            (M6 -> 6)
+#      d2 : shoulder (collar) base diameter
+#      d3 : eye outer diameter
+#      d4 : eye inner diameter (the hole)
+#      e  : shoulder height at the outer edge
+#      f  : height of the thread undercut groove
+#      dg : undercut groove / shank-tip diameter
+#      h  : total height (axis tip-to-top reference)
+#      k  : eye cross-section thickness, min side (near shoulder)
+#      l  : shank length
+#      m  : eye cross-section thickness, max side (top of eye)
+#      r1 : saddle fillet radius (eye-to-shoulder blend)
+#      r2 : undercut relief cut radius
+#      r3 : undercut groove-floor fillet radius
+# ═══════════════════════════════════════════════════════════════════════════
+
+def makeDIN580Eyebolt(self, fa):
+    """Create a DIN 580 forged lifting eye bolt.
+
+    Coordinate origin (matches the macro):
+      z = 0      bottom bearing face of the shoulder collar
+      z > 0      shoulder, then the anti-twist forged eye
+      z < 0      threaded shank, down to the tip at z = -l
+
+    The eye is a closed B-spline loft with a variable cross-section
+    (thickness sweeps k -> m), giving the characteristic forged ring.
+    Optional ISO metric threading is cut on the straight shank below the
+    undercut groove via FSThreadingMetric.cut_thread.
+    """
+    SType = fa.baseType
+    if SType != "DIN580":
+        raise NotImplementedError(f"Unknown eyebolt type: {SType}")
+    if fa.dimTable is None:
+        raise ValueError("DIN580 eye bolt requires a standard diameter")
+
+    # ── CSV dimensions (already mean values) ──────────────────────────────
+    (d1, d2, d3, d4, e, f, dg, h, k, l, m, r1, r2, r3) = (
+        float(v) for v in fa.dimTable
+    )
+
+    # Effective (deviated) shank diameter — keeps the thread crest flush with
+    # the shank surface, exactly as every other metric FsMake file does.
+    # Falls back to the nominal d1 when no pitch/class is resolvable.
+    d_shank = _TM.get_shank_dia(fa, d1)
+
+    g               = dg     # undercut groove small diameter  (macro: g)
+    chamfer_tip_dia = dg     # tip diameter after the 45° entry chamfer
+
+    # 12° forging draft on the shoulder collar
+    rad_draft  = math.radians(12.0)
+    side_inset = e * math.tan(rad_draft)
+    top_rise   = ((d2 / 2.0) - side_inset) * math.tan(rad_draft)
+
+    cut_angle_rad     = math.radians(30.0)
+    chamfer_angle_rad = math.radians(45.0)
+    # axial length consumed by the 45° entry chamfer
+    chamfer_axial = ((d_shank - chamfer_tip_dia) / 2.0) / math.tan(chamfer_angle_rad)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 1. Revolved base: shank (with undercut + entry chamfer) + shoulder
+    # ─────────────────────────────────────────────────────────────────────
+    def make_revolve_profile_clean():
+        p_tip_axis  = FreeCAD.Vector(0,                   0, -l)
+        p_tip_edge  = FreeCAD.Vector(chamfer_tip_dia / 2.0, 0, -l)
+        p_chamf_top = FreeCAD.Vector(d_shank / 2.0,       0, -l + chamfer_axial)
+
+        p2 = FreeCAD.Vector(d_shank / 2.0, 0, -f)
+        p3 = FreeCAD.Vector(g / 2.0,       0, -f)
+        p4 = FreeCAD.Vector(g / 2.0,       0, 0)        # top of groove, bottom-face plane
+        p6 = FreeCAD.Vector(d2 / 2.0,      0, 0)        # flat bottom annular face
+        p7 = FreeCAD.Vector((d2 / 2.0) - side_inset, 0, e)
+        p8 = FreeCAD.Vector(0,             0, e + top_rise)
+
+        edges = [
+            Part.makeLine(p_tip_axis,  p_tip_edge),     # flat truncated tip face
+            Part.makeLine(p_tip_edge,  p_chamf_top),    # 45° entry chamfer
+            Part.makeLine(p_chamf_top, p2),             # full shank up to undercut
+            Part.makeLine(p2, p3),
+            Part.makeLine(p3, p4),
+            Part.makeLine(p4, p6),                      # flat bottom annular face
+            Part.makeLine(p6, p7),
+            Part.makeLine(p7, p8),
+            Part.makeLine(p8, p_tip_axis),              # close along axis
+        ]
+        return Part.Face(Part.Wire(edges)).revolve(
+            FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360
+        )
+
+    base_solid = make_revolve_profile_clean()
+
+    # R3 fillet on the inner concave groove-floor edge (low-risk: simple revolve)
+    r3_edges = []
+    for edge in base_solid.Edges:
+        bbox = edge.BoundBox
+        if abs(bbox.ZMax - (-f)) > 0.01 or abs(bbox.ZMin - (-f)) > 0.01:
+            continue
+        edge_radius = bbox.XMax
+        if abs(edge_radius - g / 2.0) < 0.1 and edge_radius < d_shank / 2.0 - 0.1:
+            r3_edges.append(edge)
+    if r3_edges:
+        try:
+            base_solid = base_solid.makeFillet(r3, r3_edges)
+        except Exception as ex:
+            FreeCAD.Console.PrintWarning(f"DIN580 R3 fillet skipped: {ex}\n")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 2. Anti-twist forged eye — closed B-spline loft, thickness sweeps k->m
+    # ─────────────────────────────────────────────────────────────────────
+    spine_r  = (d3 + d4) / 4.0
+    spine_z  = h - (d3 / 2.0)
+    radial_w = (d3 - d4) / 2.0
+
+    wires = []
+    for deg in range(0, 360, 10):
+        alpha     = math.radians(deg)
+        thickness = k + (m - k) * (1 - math.cos(alpha)) / 2.0
+        r_axial   = thickness / 2.0
+        r_radial  = radial_w / 2.0
+
+        cx     = spine_r * math.sin(alpha)
+        cz     = spine_z + spine_r * math.cos(alpha)
+        center = FreeCAD.Vector(cx, 0, cz)
+
+        radial_dir = FreeCAD.Vector(math.sin(alpha), 0, math.cos(alpha))
+        axial_dir  = FreeCAD.Vector(0, 1, 0)
+
+        points = []
+        for i in range(16):
+            theta = math.radians(i * 360.0 / 16.0)
+            lx    = r_radial * math.cos(theta)
+            ly    = r_axial * math.sin(theta)
+            points.append(center + (radial_dir * lx) + (axial_dir * ly))
+
+        spline = Part.BSplineCurve()
+        spline.interpolate(points, True)
+        wires.append(Part.Wire(spline.toShape()))
+
+    eye_solid = Part.makeLoft(wires, True, False, True)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 3. Fuse base + eye
+    # ─────────────────────────────────────────────────────────────────────
+    fused = base_solid.fuse(eye_solid).removeSplitter()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 4. R2 + 30° relief cut around the undercut, applied after the fuse
+    # ─────────────────────────────────────────────────────────────────────
+    def make_cut_tool():
+        p_start  = FreeCAD.Vector(g / 2.0, 0, 0)
+        arc_peak = FreeCAD.Vector(g / 2.0 + r2, 0, r2)
+        arc_mid  = FreeCAD.Vector(
+            g / 2.0 + r2 - r2 * math.cos(math.radians(45)),
+            0,
+            r2 * math.sin(math.radians(45)),
+        )
+        dx    = r2 / math.tan(cut_angle_rad)
+        p_end = FreeCAD.Vector(g / 2.0 + r2 + dx, 0, 0)
+        edges = [
+            Part.Edge(Part.Arc(p_start, arc_mid, arc_peak)),
+            Part.makeLine(arc_peak, p_end),
+            Part.makeLine(p_end, p_start),
+        ]
+        face = Part.Face(Part.Wire(edges))
+        return face.revolve(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360)
+
+    try:
+        final_solid = fused.cut(make_cut_tool()).removeSplitter()
+    except Exception as ex:
+        FreeCAD.Console.PrintWarning(f"DIN580 R2 cut skipped: {ex}\n")
+        final_solid = fused
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 5. R1 saddle fillet (eye-to-shoulder blend). Thresholds scaled by size
+    #    so the same saddle edges are picked at every diameter. Best-effort:
+    #    OCCT's fillet can fail on complex fused topology (see the shoulder
+    #    eyebolt note above), so it is skipped on error rather than relied on.
+    # ─────────────────────────────────────────────────────────────────────
+    r1_edges = []
+    for edge in final_solid.Edges:
+        bbox = edge.BoundBox
+        if bbox.ZMin > e * 0.08 and bbox.ZMax < (e + r1 + m):
+            if (bbox.XMax - bbox.XMin) > d4 * 0.25 or (bbox.YMax - bbox.YMin) > d4 * 0.25:
+                r1_edges.append(edge)
+    if r1_edges:
+        try:
+            final_solid = final_solid.makeFillet(r1, r1_edges)
+        except Exception as ex:
+            FreeCAD.Console.PrintWarning(f"DIN580 R1 fillet skipped: {ex}\n")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 6. Optional ISO metric threading on the straight shank below the groove
+    # ─────────────────────────────────────────────────────────────────────
+    if getattr(fa, "Thread", False):
+        P = _TM.resolve_metric_pitch(fa)
+        tl = max(l - f, 0.0)
+        if P and P > 0 and tl > 1e-6:
+            final_solid = _TM.cut_thread(final_solid, fa, d1, tl, -f, P)
+
+    try:
+        return Part.Solid(final_solid)
+    except Exception:
+        return final_solid

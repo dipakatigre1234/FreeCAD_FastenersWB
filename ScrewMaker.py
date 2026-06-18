@@ -379,13 +379,11 @@ screwTables = {
     "ASMEB18.15.1B": ("Screw", "makeEyebolt"),        # Type 1 Style B Plain Pattern Eyebolt
     "ASMEB18.15.2A": ("Screw", "makeEyeboltShoulder"), # Type 2 Style A Shoulder Pattern Eyebolt
     "ASMEB18.15.2B": ("Screw", "makeEyeboltShoulder"), # Type 2 Style B Shoulder Pattern Eyebolt
+    "DIN580": ("Screw", "makeDIN580Eyebolt"),         # DIN 580 metric lifting eye bolt
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.4":   ("Washer", "makeHelicalSpringWasher"),
-    "ASMEB18.21.1.11A": ("Washer", "makeWasher"),
-    "ASMEB18.21.1.11B": ("Washer", "makeWasher"),
-    "ASMEB18.21.1.11C": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12A": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12B": ("Washer", "makeWasher"),
     "ASMEB18.21.1.12C": ("Washer", "makeWasher"),
@@ -451,6 +449,9 @@ screwTables = {
     "ISO8752": ("Pin", "makeSlottedSpringPin"),
     "ISO13337": ("Pin", "makeSlottedSpringPin"),
     # * diam pos and K pos were moved from this table to the csv titles
+    # >>> WOOTZ CUSTOM STANDARDS — managed by Wootz server, do not edit >>>
+    "DIN436": ("Washer", "makeSquarewasher"),
+    # <<< WOOTZ CUSTOM STANDARDS <<<
 }
 FSAppendAliasesToTable(screwTables)
 

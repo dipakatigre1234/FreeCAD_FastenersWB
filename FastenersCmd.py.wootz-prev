@@ -291,7 +291,6 @@ FSScrewCommandTable = {
     "ASMEB18.15.1B":(translate("FastenerCmd", "UNC Type 1 Plain Pattern Eyebolt - Style B"), OtherHeadGroup, EyeboltParameters),
     "ASMEB18.15.2A":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style A"), OtherHeadGroup, EyeboltParameters),
     "ASMEB18.15.2B":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style B"), OtherHeadGroup, EyeboltParameters),
-    "DIN580":(translate("FastenerCmd", "Lifting eye bolt"), OtherHeadGroup, EyeboltParameters),
     "DIN478":   (translate("FastenerCmd", "Square head bolts with collar"), OtherHeadGroup, ScrewParametersLC),
     "DIN603":   (translate("FastenerCmd", "Mushroom head square neck bolts"), OtherHeadGroup, ScrewParametersLC),
     "ISO2342":  (translate("FastenerCmd", "headless screws with shank"), OtherHeadGroup, ScrewParametersLC),
@@ -463,9 +462,6 @@ FSScrewCommandTable = {
     "ISO8751":  (translate("FastenerCmd", "Coiled spring pins, light duty"), PinGroup, PinParameters),
     "ISO8752":  (translate("FastenerCmd", "Slotted spring pins, heavy duty"), PinGroup, PinParameters),
     "ISO13337": (translate("FastenerCmd", "Slotted spring pins, light duty"), PinGroup, PinParameters),
-    # >>> WOOTZ CUSTOM STANDARDS — managed by Wootz server, do not edit >>>
-    "DIN436": (translate("FastenerCmd", "Square washer"), WasherGroup, WasherParameters),
-    # <<< WOOTZ CUSTOM STANDARDS <<<
 }
 
 FatenersStandards = {"ASME", "DIN", "ISO", "SAE", "EN", "GOST", "BSPP"}

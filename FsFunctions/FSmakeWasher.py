@@ -41,9 +41,6 @@ def makeWasher(self, fa): # dynamically loaded method of class Screw
     - DIN6340 Washers for clamping devices
     - DIN6796 Conical spring washers (Belleville)
     - NFE27-619 Washer
-    - ASMEB18.21.1.11A Washer
-    - ASMEB18.21.1.11B Washer
-    - ASMEB18.21.1.11C Washer
     - ASMEB18.21.1.12A Washer
     - ASMEB18.21.1.12B Washer
     - ASMEB18.21.1.12C Washer
@@ -68,16 +65,7 @@ def makeWasher(self, fa): # dynamically loaded method of class Screw
     elif SType[:3] == 'DIN':
         d1_min, d2_max, h = fa.dimTable
     elif SType[:3] == 'ASM':
-        # ASME plain washer tables are available in two layouts:
-        # - 12A/B/C: d1, d2_max, h_max
-        # - 11A/B/C: d1_basic, d1_max, d1_min, d2_basic, d2_max, d2_min,
-        #            h_basic, h_max, h_min
-        if len(fa.dimTable) >= 9:
-            d1_min = fa.dimTable[0]   # d1_basic
-            d2_max = fa.dimTable[3]   # d2_basic
-            h      = fa.dimTable[6]   # h_basic
-        else:
-            d1_min, d2_max, h = fa.dimTable
+        d1_min, d2_max, h = fa.dimTable
     elif SType[:3] == 'NFE':
         d1_min, d2_max, d3, h, h_min = fa.dimTable
 

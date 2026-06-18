@@ -203,7 +203,7 @@ class Screw:
             numTurns = math.floor(tipH / p) or 1
             FreeCAD.Console.PrintMessage(str(numTurns))
             # Part.show(hlx)
-            hlx = Part.makeLongHelix(p, numTurns * p, 5, 0, self.LeftHanded)
+            hlx = Part.makeLongHelix(p, tipH, 5, 0, self.LeftHanded)
             sweep = Part.BRepOffsetAPI.MakePipeShell(hlx)
             sweep.setFrenetMode(True)
             sweep.setTransitionMode(1)  # right corner transition

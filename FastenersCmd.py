@@ -292,6 +292,8 @@ FSScrewCommandTable = {
     "ASMEB18.15.2A":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style A"), OtherHeadGroup, EyeboltParameters),
     "ASMEB18.15.2B":(translate("FastenerCmd", "UNC Type 2 Shoulder Pattern Eyebolt - Style B"), OtherHeadGroup, EyeboltParameters),
     "DIN580":(translate("FastenerCmd", "Lifting eye bolt"), OtherHeadGroup, EyeboltParameters),
+    "ISO3266":(translate("FastenerCmd", "Lifting eye bolt"), OtherHeadGroup, EyeboltParameters),
+    "DIN604":(translate("FastenerCmd", "Countersunk bolt with nib"), OtherHeadGroup, ScrewParametersLC),
     "DIN478":   (translate("FastenerCmd", "Square head bolts with collar"), OtherHeadGroup, ScrewParametersLC),
     "DIN603":   (translate("FastenerCmd", "Mushroom head square neck bolts"), OtherHeadGroup, ScrewParametersLC),
     "ISO2342":  (translate("FastenerCmd", "headless screws with shank"), OtherHeadGroup, ScrewParametersLC),
@@ -696,12 +698,19 @@ class FSScrewObject(FSBaseObject):
         if prop == "Diameter" and not _is_asme_external(fp) \
                 and not _is_asme_std(getattr(fp, "Type", "")) \
                 and hasattr(fp, "Thread_Pitch"):
-            _new_p = _TM.valid_pitches_for_dia(str(getattr(fp, "Diameter", "") or ""))
+            _dia_p = str(getattr(fp, "Diameter", "") or "")
+            _new_p = _TM.valid_pitches_for_dia(_dia_p)
             if _new_p:
                 try:
                     _cur = str(fp.Thread_Pitch)
+                    _def = _TM.default_pitch_for_dia(_dia_p) or _new_p[0]
                     fp.Thread_Pitch = _new_p
-                    fp.Thread_Pitch = _cur if _cur in _new_p else _new_p[0]
+                    # Fine-pitch designations (e.g. M100x6) force their named
+                    # pitch; other sizes keep the current value if still valid.
+                    if _TM.suffix_pitch(_dia_p):
+                        fp.Thread_Pitch = _def
+                    else:
+                        fp.Thread_Pitch = _cur if _cur in _new_p else _def
                 except Exception:
                     pass
                 _p0 = str(getattr(fp, "Thread_Pitch", "") or "")
@@ -945,7 +954,7 @@ class FSScrewObject(FSBaseObject):
                         translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                     ).Thread_Pitch = _pitches_oc
                     try:
-                        fp.Thread_Pitch = _pitches_oc[0]
+                        fp.Thread_Pitch = _TM.default_pitch_for_dia(_dia_oc) or _pitches_oc[0]
                     except Exception:
                         pass
                 if not hasattr(fp, "Thread_Class_ISO"):
@@ -1263,7 +1272,7 @@ class FSScrewObject(FSBaseObject):
                         translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                     ).Thread_Pitch = _pitches
                     try:
-                        obj.Thread_Pitch = _pitches[0]
+                        obj.Thread_Pitch = _TM.default_pitch_for_dia(_dia_v) or _pitches[0]
                     except Exception:
                         pass
                     obj.setEditorMode("Thread_Pitch", 2)
@@ -1829,21 +1838,29 @@ class FSScrewObject(FSBaseObject):
                 except Exception: pass
                 fp.setEditorMode("Thread_Root", 0)
 
-            _pp = _TM.valid_pitches_for_dia(_dia_pre)
+            _dia_eff = _dia_pre
+            _pp = _TM.valid_pitches_for_dia(_dia_eff)
             if not _pp:
-                _pp = _TM.valid_pitches_for_dia(str(fp.Diameter or ""))
+                _dia_eff = str(fp.Diameter or "")
+                _pp = _TM.valid_pitches_for_dia(_dia_eff)
             if _pp:
+                _def_p = _TM.default_pitch_for_dia(_dia_eff) or _pp[0]
                 if not hasattr(fp, "Thread_Pitch") and "TPitch" in params:
                     fp.addProperty("App::PropertyEnumeration", "Thread_Pitch",
                         "Parameters",
                         translate("FastenerCmd", "Thread_Pitch (mm) — from ISO 965 table")
                     ).Thread_Pitch = _pp
+                    try: fp.Thread_Pitch = _def_p
+                    except Exception: pass
                     fp.setEditorMode("Thread_Pitch", 0)
                 elif hasattr(fp, "Thread_Pitch"):
                     try:
                         _cur_p2 = str(fp.Thread_Pitch)
                         fp.Thread_Pitch = _pp
-                        fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp else _pp[0]
+                        if _TM.suffix_pitch(_dia_eff):
+                            fp.Thread_Pitch = _def_p
+                        else:
+                            fp.Thread_Pitch = _cur_p2 if _cur_p2 in _pp else _def_p
                         fp.setEditorMode("Thread_Pitch", 0)
                     except Exception: pass
 
@@ -1969,8 +1986,12 @@ class FSScrewObject(FSBaseObject):
                 if _new_p_e:
                     try:
                         _cur_p = str(fp.Thread_Pitch)
+                        _def_e = _TM.default_pitch_for_dia(_dia_e) or _new_p_e[0]
                         fp.Thread_Pitch = _new_p_e
-                        fp.Thread_Pitch = _cur_p if _cur_p in _new_p_e else _new_p_e[0]
+                        if _TM.suffix_pitch(_dia_e):
+                            fp.Thread_Pitch = _def_e
+                        else:
+                            fp.Thread_Pitch = _cur_p if _cur_p in _new_p_e else _def_e
                     except Exception:
                         pass
 

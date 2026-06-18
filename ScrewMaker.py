@@ -380,6 +380,8 @@ screwTables = {
     "ASMEB18.15.2A": ("Screw", "makeEyeboltShoulder"), # Type 2 Style A Shoulder Pattern Eyebolt
     "ASMEB18.15.2B": ("Screw", "makeEyeboltShoulder"), # Type 2 Style B Shoulder Pattern Eyebolt
     "DIN580": ("Screw", "makeDIN580Eyebolt"),         # DIN 580 metric lifting eye bolt
+    "ISO3266": ("Screw", "makeISO3266Eyebolt"),       # ISO 3266 metric lifting eye bolt
+    "DIN604": ("Screw", "makeNibBolt"),               # DIN 604 countersunk bolt with nib
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),

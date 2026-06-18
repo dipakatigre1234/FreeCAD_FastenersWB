@@ -600,3 +600,180 @@ def makeDIN580Eyebolt(self, fa):
         return Part.Solid(final_solid)
     except Exception:
         return final_solid
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ISO 3266 — Forged Lifting Eye Bolt (metric)
+#
+#  Geometry is a 1:1 port of the ISO 3266 master macro.  The M10-specific
+#  constants in that macro are replaced by values pulled from FsData via
+#  fa.dimTable.  None of the ISO 3266 dimensions are given as max/min pairs
+#  (E = min, F = max, r = min, B = min, H and s are exact), so the CSV columns
+#  are used directly — no averaging needed.
+#
+#  CSV  ISO3266def.csv  column order (fa.dimTable):
+#      d, E, H, F, r, B, s
+#  where
+#      d : nominal thread diameter
+#      E : internal diameter of the eye
+#      H : height from underside of collar to end of shank
+#      F : diameter of the eye cross-section
+#      r : radius of grooves and fillets
+#      B : diameter of the collar (also the dome / saddle reference)
+#      s : distance from collar to first thread
+#
+#  dg (shank diameter at the undercut) is not tabulated by the standard; it is
+#  derived as d - 2r, which reproduces the macro's M10 value (8 = 10 - 2·1).
+# ═══════════════════════════════════════════════════════════════════════════
+
+def makeISO3266Eyebolt(self, fa):
+    """Create an ISO 3266 forged lifting eye bolt.
+
+    Coordinate origin (matches the macro):
+      z = 0      underside of the collar (bearing face)
+      z > 0      collar cylinder, hemispherical dome, then the circular eye
+      z < 0      threaded shank, down to the tip at z = -H
+
+    The eye is a plain torus fused into the dome; a semicircular relief groove
+    is cut at the collar base and an adaptive saddle fillet blends the dome
+    into the eye.  Optional ISO metric threading is cut on the shank below the
+    collar-to-first-thread distance s.
+    """
+    SType = fa.baseType
+    if SType != "ISO3266":
+        raise NotImplementedError(f"Unknown eyebolt type: {SType}")
+    if fa.dimTable is None:
+        raise ValueError("ISO3266 eye bolt requires a standard diameter")
+
+    # ── CSV dimensions (used directly — no max/min pairs in this standard) ──
+    (d, E, H, F, r, B, s) = (float(v) for v in fa.dimTable)
+
+    # Effective (deviated) thread/shank diameter — keeps the thread crest flush
+    # with the shank surface (same convention as every metric FsMake file).
+    thread_dia = _TM.get_shank_dia(fa, d)
+
+    dg = d - 2.0 * r                # shank diameter at undercut (macro: d - 2r)
+
+    e     = (B - d) / 2.0           # collar cylindrical height
+    Z_eye = e + (E / 2.0 + 0.1) + (B / 2.0) - 0.5
+    r1    = B / 2.0                 # target outer saddle fillet radius
+
+    chamfer_angle_rad = math.radians(45.0)
+    chamfer_tip_dia   = thread_dia - 1.5
+    chamfer_axial     = ((thread_dia - chamfer_tip_dia) / 2.0) / math.tan(chamfer_angle_rad)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 1. Revolved base: shank + thread-to-shank fillet + collar + dome
+    # ─────────────────────────────────────────────────────────────────────
+    def make_iso_base():
+        p_tip_axis   = FreeCAD.Vector(0,                     0, -H)
+        p_tip_edge   = FreeCAD.Vector(chamfer_tip_dia / 2.0, 0, -H)
+        p_chamf_top  = FreeCAD.Vector(thread_dia / 2.0,      0, -H + chamfer_axial)
+        p_thread_top = FreeCAD.Vector(thread_dia / 2.0,      0, -s)
+
+        # Concave fillet between thread (thread_dia) and shank neck (dg).
+        # Clamp to 99% of the step so there is no zero-length connector line.
+        step_width     = (thread_dia - dg) / 2.0
+        actual_inner_r = min(r, step_width * 0.99)
+
+        p_fillet_start = FreeCAD.Vector(dg / 2.0 + actual_inner_r, 0, -s)
+        p_fillet_end   = FreeCAD.Vector(dg / 2.0,                  0, -s + actual_inner_r)
+        arc_center_x   = dg / 2.0 + actual_inner_r
+        arc_center_z   = -s + actual_inner_r
+        p_fillet_mid   = FreeCAD.Vector(
+            arc_center_x - actual_inner_r * math.cos(math.radians(45)),
+            0,
+            arc_center_z - actual_inner_r * math.sin(math.radians(45)),
+        )
+
+        p_collar_inner_sharp = FreeCAD.Vector(dg / 2.0, 0, 0)
+        p_collar_outer       = FreeCAD.Vector(B / 2.0,  0, 0)
+        p_collar_top         = FreeCAD.Vector(B / 2.0,  0, e)
+        p_dome_top           = FreeCAD.Vector(0,        0, e + B / 2.0)
+
+        edges = [
+            Part.makeLine(p_tip_axis,  p_tip_edge),
+            Part.makeLine(p_tip_edge,  p_chamf_top),
+            Part.makeLine(p_chamf_top, p_thread_top),
+        ]
+        # Tiny horizontal line if there is leftover space before the fillet
+        if p_thread_top.x > (p_fillet_start.x + 0.001):
+            edges.append(Part.makeLine(p_thread_top, p_fillet_start))
+        edges.append(Part.Edge(Part.Arc(p_fillet_start, p_fillet_mid, p_fillet_end)))
+        edges.append(Part.makeLine(p_fillet_end, p_collar_inner_sharp))
+        edges.append(Part.makeLine(p_collar_inner_sharp, p_collar_outer))
+        edges.append(Part.makeLine(p_collar_outer, p_collar_top))
+        dome_mid = FreeCAD.Vector(
+            (B / 2.0) * math.cos(math.radians(45)),
+            0,
+            e + (B / 2.0) * math.sin(math.radians(45)),
+        )
+        edges.append(Part.Edge(Part.Arc(p_collar_top, dome_mid, p_dome_top)))
+        edges.append(Part.makeLine(p_dome_top, p_tip_axis))
+
+        return Part.Face(Part.Wire(edges)).revolve(
+            FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360
+        )
+
+    base_solid = make_iso_base()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 2. Circular eye (torus) fused into the dome
+    # ─────────────────────────────────────────────────────────────────────
+    R_major   = (E / 2.0) + (F / 2.0)
+    R_minor   = F / 2.0
+    eye_torus = Part.makeTorus(R_major, R_minor)
+    eye_torus.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(0, 0, Z_eye),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90),
+    )
+
+    fused_solid = base_solid.fuse(eye_torus).removeSplitter()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 3. Semicircular relief groove cut at the collar base
+    # ─────────────────────────────────────────────────────────────────────
+    def make_cut_tool():
+        p_start  = FreeCAD.Vector(dg / 2.0,         0, 0)
+        arc_peak = FreeCAD.Vector(dg / 2.0 + r,     0, r)
+        p_end    = FreeCAD.Vector(dg / 2.0 + 2 * r, 0, 0)
+        edges = [
+            Part.Edge(Part.Arc(p_start, arc_peak, p_end)),
+            Part.makeLine(p_end, p_start),
+        ]
+        return Part.Face(Part.Wire(edges)).revolve(
+            FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 360
+        )
+
+    try:
+        final_solid = fused_solid.cut(make_cut_tool()).removeSplitter()
+    except Exception as ex:
+        FreeCAD.Console.PrintWarning(f"ISO3266 groove cut skipped: {ex}\n")
+        final_solid = fused_solid
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 4. Adaptive saddle fillet (outer dome-to-eye intersection)
+    # ─────────────────────────────────────────────────────────────────────
+    dome_top_z = e + B / 2.0
+    r1_edges = []
+    for edge in final_solid.Edges:
+        cz   = edge.CenterOfMass.z
+        bbox = edge.BoundBox
+        if (e + 0.1) < cz < (dome_top_z + 0.1):
+            if (bbox.XMax - bbox.XMin) > (E / 2.0) or (bbox.YMax - bbox.YMin) > (E / 2.0):
+                r1_edges.append(edge)
+    final_solid = _fillet_with_backoff(final_solid, r1_edges, r1, "saddle")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 5. Optional ISO metric threading on the shank below distance s
+    # ─────────────────────────────────────────────────────────────────────
+    if getattr(fa, "Thread", False):
+        P = _TM.resolve_metric_pitch(fa)
+        tl = max(H - s, 0.0)
+        if P and P > 0 and tl > 1e-6:
+            final_solid = _TM.cut_thread(final_solid, fa, d, tl, -s, P)
+
+    try:
+        return Part.Solid(final_solid)
+    except Exception:
+        return final_solid

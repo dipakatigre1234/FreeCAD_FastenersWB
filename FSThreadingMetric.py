@@ -125,14 +125,53 @@ def _metric_table():
 
 
 def _dia_key(diam_str):
-    """'M6' → '6.0',  '6' → '6.0'"""
+    """'M6' → '6.0',  '6' → '6.0',  'M100x6' → '100.0'
+
+    Fine-pitch designations carry the pitch as an 'x<pitch>' suffix
+    (e.g. 'M100x6', 'M72x6').  The metric_thread_dia.csv is keyed by the bare
+    nominal diameter, so the suffix must be stripped before lookup — otherwise
+    float('100x6') fails and every fine-pitch size returns an empty pitch list.
+    """
     s = str(diam_str or "").strip()
     if s.upper().startswith("M"):
         s = s[1:]
+    if "x" in s.lower():            # drop the 'x<pitch>' fine-pitch suffix
+        s = s.lower().split("x", 1)[0]
     try:
         return str(float(s))
     except Exception:
         return s
+
+
+def suffix_pitch(diam_str):
+    """Return the named pitch of a fine-pitch designation as a string.
+
+    'M100x6' → '6.0',  'M72x6' → '6.0';  plain sizes ('M64', 'M8') → None.
+    """
+    s = str(diam_str or "").strip().lower()
+    if "x" in s:
+        try:
+            return str(float(s.split("x", 1)[1]))
+        except Exception:
+            return None
+    return None
+
+
+def default_pitch_for_dia(dia_str):
+    """Preferred default Thread_Pitch (string) for a diameter.
+
+    A fine-pitch designation ('M100x6') defaults to its named pitch ('6.0')
+    when that pitch is present in the table; every other size keeps the
+    previous default (the first entry of the sorted pitch list).
+    Returns None when the diameter has no pitches in the table.
+    """
+    pitches = valid_pitches_for_dia(dia_str)
+    if not pitches:
+        return None
+    sp = suffix_pitch(dia_str)
+    if sp and sp in pitches:
+        return sp
+    return pitches[0]
 
 
 # ── Dashboard query helpers ───────────────────────────────────────────────────
@@ -191,11 +230,13 @@ def resolve_metric_pitch(fa):
                 return v
         except Exception:
             pass
-    # Coarsest pitch from CSV for this diameter (first = smallest = coarsest)
-    pitches = valid_pitches_for_dia(getattr(fa, "calc_diam", "") or "")
-    if pitches:
+    # Default pitch from CSV for this diameter — honours the 'x<pitch>'
+    # fine-pitch suffix (e.g. M100x6 → 6.0) so the cut matches the UI default.
+    _dia_s = getattr(fa, "calc_diam", "") or ""
+    _def_p = default_pitch_for_dia(_dia_s)
+    if _def_p:
         try:
-            return float(pitches[0])
+            return float(_def_p)
         except Exception:
             pass
     # Absolute last resort - derive from nominal if CSV has nothing
@@ -290,11 +331,11 @@ def get_shank_dia(fa, dia_fallback):
             except Exception:
                 pass
     if not mp or not str(mp).strip():
-        # Last resort: coarsest pitch from CSV
+        # Last resort: default pitch from CSV (honours the fine-pitch suffix)
         _dia_s = getattr(fa, "calc_diam", "") or ""
-        _std_p = valid_pitches_for_dia(_dia_s)
-        if _std_p:
-            mp = _std_p[0]
+        _def_p = default_pitch_for_dia(_dia_s)
+        if _def_p:
+            mp = _def_p
 
     mc = getattr(fa, "Thread_Class_ISO", None)
     if not mc or not str(mc).strip():

@@ -32,6 +32,7 @@ FSIconAliases = {
     'DIN605' : 'ISO2009',
     'DIN608' : 'ISO2009',
     'DIN582' : 'ISO4032',
+    'DIN186' : 'ASMEB18.2.1.1',
     'ISO7049-C' : 'DIN7996',
     'ISO7049-R' : 'DIN7996',
     'ASMEB18.21.1.11A' : 'ASMEB18.21.1.12B',

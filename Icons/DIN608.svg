@@ -1,0 +1,20 @@
+<svg width="48" height="48" version="1.1" viewBox="0 0 12.7 12.7" xmlns="http://www.w3.org/2000/svg">
+ <!-- DIN 608 flat countersunk head square neck bolt -->
+ <g fill="#ffb300">
+  <path d="m4.35 1.25h4.0v0.65l-1.25 1.6h-1.5l-1.25-1.6z"/>
+  <rect x="5.25" y="3.5" width="2.2" height="1.7" rx="0.1"/>
+  <rect x="5.75" y="5.2" width="1.2" height="6.9" rx="0.12"/>
+ </g>
+ <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width=".28">
+  <path d="m4.35 1.25h4.0v0.65l-1.25 1.6h-1.5l-1.25-1.6z"/>
+  <rect x="5.25" y="3.5" width="2.2" height="1.7" rx="0.1"/>
+  <rect x="5.75" y="5.2" width="1.2" height="6.9" rx="0.12"/>
+  <line x1="5.75" y1="6.3" x2="6.95" y2="6.3"/>
+  <line x1="5.75" y1="7.1" x2="6.95" y2="7.1"/>
+  <line x1="5.75" y1="7.9" x2="6.95" y2="7.9"/>
+  <line x1="5.75" y1="8.7" x2="6.95" y2="8.7"/>
+  <line x1="5.75" y1="9.5" x2="6.95" y2="9.5"/>
+  <line x1="5.75" y1="10.3" x2="6.95" y2="10.3"/>
+  <line x1="5.75" y1="11.1" x2="6.95" y2="11.1"/>
+ </g>
+</svg>

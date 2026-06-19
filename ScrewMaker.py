@@ -386,6 +386,7 @@ screwTables = {
     "DIN605": ("Screw", "makeDIN605CarriageBolt"),    # DIN 605 flat countersunk head square neck bolt with long neck
     "DIN608": ("Screw", "makeDIN608CarriageBolt"),    # DIN 608 flat countersunk head square neck bolt
     "DIN186": ("Screw", "makeTbolt"),                 # DIN 186 T-head bolt
+    "DIN188": ("Screw", "makeDIN188Tbolt"),           # DIN 188 T-head bolt (double-nib neck)
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),

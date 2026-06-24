@@ -30,22 +30,6 @@ from screw_maker import *
 
 
 def makeTbolt(self, fa):
-    """T-bolt-family dispatcher.
-
-    screwTables points DIN186 + DIN188 at this function so the FSmakeDIN188Tbolt
-    shim could be removed. Each baseType routes to its (unchanged) maker. AI
-    overrides should edit the routed geometry function, not this dispatcher.
-    """
-    bt = fa.baseType
-    if bt == "DIN188":
-        return makeDIN188Tbolt(self, fa)
-    elif bt == "DIN186":
-        return _makeTboltDIN186(self, fa)
-    else:
-        raise NotImplementedError(f"Unknown T-bolt-family type: {bt}")
-
-
-def _makeTboltDIN186(self, fa):
     """Create a DIN 186 T-head bolt.
 
     Coordinate origin (matches the macro):

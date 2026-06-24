@@ -262,7 +262,7 @@ screwTables = {
     "DIN465":          ("Screw", "makeThumbScrew"),
     "DIN653":          ("Screw", "makeThumbScrew"),
     "WOOTZ_ADJ_BREMS": ("Screw", "makeThumbScrew"),
-    "DIN582": ("Nut", "makeEyebolt"),                # DIN 582 lifting eye nut (routed via eyebolt dispatcher)
+    "DIN582": ("Nut", "makeDIN582Eyenut"),           # DIN 582 lifting eye nut
     "ISO4032": ("Nut", "makeHexNut"),
     "ISO4033": ("Nut", "makeHexNut"),
     "ISO4034": ("Nut", "makeHexNut"),
@@ -299,7 +299,7 @@ screwTables = {
     "DIN562": ("Nut", "makeSquareNut"),
     "DIN928": ("Nut", "makeWeldNut"),
     "DIN929": ("Nut", "makeWeldNut"),
-    "DIN935":  ("Nut", "makeCastleNut"),             # slotted nut (routed via castle/slotted dispatcher)
+    "DIN935":  ("Nut", "makeSlottedNut"),
     "DIN935C": ("Nut", "makeCastleNut"),
     "DIN985": ("Nut", "makeNylocNut"),
     "DIN508": ("TSlot", "makeTSlot"),
@@ -324,8 +324,8 @@ screwTables = {
     "ASMEB18.2.2.5B": ("Nut", "makeHexNut"),      # Hex Jam Nuts (Table 5B)
     "ASMEB18.2.2.11A": ("Nut", "makeHexNut"),     # Heavy Hex Nut (Table 11)
     "ASMEB18.2.2.11B": ("Nut", "makeHexNut"),     # Heavy Hex Jam Nut (Table 11)
-    "ASMEB18.2.2.6": ("Nut", "makeCastleNut"),    # Hex Slotted Thin Nuts (Table 6, routed via dispatcher)
-    "ASMEB18.2.2.8": ("Nut", "makeCastleNut"),    # Hex Slotted Wide Nuts (Table 8, routed via dispatcher)
+    "ASMEB18.2.2.6": ("Nut", "makeSlottedNut"),    # Hex Slotted Thin Nuts (Table 6)
+    "ASMEB18.2.2.8": ("Nut", "makeSlottedNut"),    # Hex Slotted Wide Nuts (Table 8)
     "ASMEB18.2.2.15": ("Nut", "makeCastleNut"),    # Hex Castle Nuts (Table 15)
     "ASMEB18.2.2.13A": ("Nut", "makeHexNutWFlange"),  # Hex Flange Nuts (Table 13A)
     "ASMEB18.2.2.13B": ("Nut", "makeHexNutWFlange"),  # Large Hex Flange Nuts (Table 13B)
@@ -370,15 +370,6 @@ screwTables = {
     "ASMEB18.6.3.16A": ("Screw", "makeRoundHeadScrew"),
     "ASMEB18.6.3.16B": ("Screw", "makeRoundHeadScrew"),
     "ASMEB18.5.2": ("Screw", "makeCarriageBolt"),
-    "ASMEB18.5.1": ("Screw", "makeASMEB18_5Bolt"),    # Table 1  Round head bolt
-    "ASMEB18.5.3": ("Screw", "makeASMEB18_5Bolt"),    # Table 3  Round head short square neck bolt
-    "ASMEB18.5.4": ("Screw", "makeASMEB18_5Bolt"),    # Table 4  Round head ribbed neck bolt
-    "ASMEB18.5.5": ("Screw", "makeASMEB18_5Bolt"),    # Table 5  Round head fin neck bolt
-    "ASMEB18.5.6": ("Screw", "makeASMEB18_5Bolt"),    # Table 6  Step bolt
-    "ASMEB18.5.7": ("Screw", "makeASMEB18_5Bolt"),    # Table 7  Countersunk / slotted countersunk bolt
-    "ASMEB18.5.8": ("Screw", "makeASMEB18_5Bolt"),    # Table 8  114-deg countersunk square neck bolt
-    "ASMEB18.5.9": ("Screw", "makeASMEB18_5Bolt"),    # Table 9  Flat countersunk head elevator bolt
-    "ASMEB18.5.10": ("Screw", "makeASMEB18_5Bolt"),   # Table 10 T-head bolt
     "ASMEB18.9.3": ("Screw", "makePlowBolt"),
     "ASMEB18.9.4": ("Screw", "makePlowBolt"),
     "ASMEB18.9.5": ("Screw", "makePlowBolt"),
@@ -387,15 +378,15 @@ screwTables = {
     "ASMEB18.9.9": ("Screw", "makePlowBolt"),
     "ASMEB18.15.1A": ("Screw", "makeEyebolt"),        # Type 1 Style A Plain Pattern Eyebolt
     "ASMEB18.15.1B": ("Screw", "makeEyebolt"),        # Type 1 Style B Plain Pattern Eyebolt
-    "ASMEB18.15.2A": ("Screw", "makeEyebolt"),         # Type 2 Style A Shoulder Pattern Eyebolt (routed via dispatcher)
-    "ASMEB18.15.2B": ("Screw", "makeEyebolt"),         # Type 2 Style B Shoulder Pattern Eyebolt (routed via dispatcher)
-    "DIN580": ("Screw", "makeEyebolt"),               # DIN 580 metric lifting eye bolt (routed via dispatcher)
-    "ISO3266": ("Screw", "makeEyebolt"),              # ISO 3266 metric lifting eye bolt (routed via dispatcher)
+    "ASMEB18.15.2A": ("Screw", "makeEyeboltShoulder"), # Type 2 Style A Shoulder Pattern Eyebolt
+    "ASMEB18.15.2B": ("Screw", "makeEyeboltShoulder"), # Type 2 Style B Shoulder Pattern Eyebolt
+    "DIN580": ("Screw", "makeDIN580Eyebolt"),         # DIN 580 metric lifting eye bolt
+    "ISO3266": ("Screw", "makeISO3266Eyebolt"),       # ISO 3266 metric lifting eye bolt
     "DIN604": ("Screw", "makeNibBolt"),               # DIN 604 countersunk bolt with nib
-    "DIN605": ("Screw", "makeCarriageBolt"),          # DIN 605 flat countersunk head square neck bolt with long neck (routed via dispatcher)
-    "DIN608": ("Screw", "makeCarriageBolt"),          # DIN 608 flat countersunk head square neck bolt (routed via dispatcher)
+    "DIN605": ("Screw", "makeDIN605CarriageBolt"),    # DIN 605 flat countersunk head square neck bolt with long neck
+    "DIN608": ("Screw", "makeDIN608CarriageBolt"),    # DIN 608 flat countersunk head square neck bolt
     "DIN186": ("Screw", "makeTbolt"),                 # DIN 186 T-head bolt
-    "DIN188": ("Screw", "makeTbolt"),                 # DIN 188 T-head bolt (double-nib neck, routed via dispatcher)
+    "DIN188": ("Screw", "makeDIN188Tbolt"),           # DIN 188 T-head bolt (double-nib neck)
     "ASMEB18.21.1.1":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.2":   ("Washer", "makeHelicalSpringWasher"),
     "ASMEB18.21.1.3":   ("Washer", "makeHelicalSpringWasher"),

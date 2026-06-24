@@ -51,6 +51,15 @@ FSIconAliases = {
     'ISO15071' : 'EN1662',
     'ISO15072' : 'EN1662',
     'ASMEB18.2.2.15' : 'DIN935C',
+    'ASMEB18.5.1' : 'ASMEB18.5.2',
+    'ASMEB18.5.3' : 'ASMEB18.5.2',
+    'ASMEB18.5.4' : 'ASMEB18.5.2',
+    'ASMEB18.5.5' : 'ASMEB18.5.2',
+    'ASMEB18.5.6' : 'ASMEB18.5.2',
+    'ASMEB18.5.7' : 'ASMEB18.5.2',
+    'ASMEB18.5.8' : 'ASMEB18.5.2',
+    'ASMEB18.5.9' : 'ASMEB18.5.2',
+    'ASMEB18.5.10' : 'ASMEB18.5.2',
 }
 
 # a table to reuse similar type standards

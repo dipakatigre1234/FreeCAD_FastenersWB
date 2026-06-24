@@ -164,21 +164,13 @@ def makeSlottedNut(self, fa):
 
 
 def makeCastleNut(self, fa):
-    """Castle/slotted nut-family dispatcher.
+    """Castle nut: hex body + cylindrical crown with slots in the crown.
 
-    screwTables points the slotted nuts (DIN935, ASMEB18.2.2.6/.8) and castle
-    nuts (DIN935C, ASMEB18.2.2.15) at this function so the FSmakeSlottedNut shim
-    could be removed. Each baseType routes to its (unchanged) geometry function.
-    AI overrides should edit the routed function (_makeCastleNut /
-    _makeSlottedNut), not this dispatcher.
+    Registered types:
+        DIN935C         — DIN 935 castle nuts (M12+ only)
+        ASMEB18.2.2.15  — ASME B18.2.2 Table 15 hex castle nuts
     """
-    bt = fa.baseType
-    if bt in ("DIN935", "ASMEB18.2.2.6", "ASMEB18.2.2.8"):
-        return _makeSlottedNut(self, fa)
-    elif bt in ("DIN935C", "ASMEB18.2.2.15"):
-        return _makeCastleNut(self, fa)
-    else:
-        raise NotImplementedError(f"Unknown castle/slotted nut type: {bt}")
+    return _makeCastleNut(self, fa)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -21,29 +21,6 @@ import FSThreadingMetric as _TM
 
 
 def makeEyebolt(self, fa):
-    """Eyebolt-family dispatcher.
-
-    screwTables points the whole eyebolt family at this one function so the
-    per-standard shim files (FSmakeDIN580Eyebolt.py etc.) could be removed.
-    Each baseType routes to its (unchanged) maker. AI overrides should edit the
-    routed geometry function (e.g. makeDIN580Eyebolt), not this dispatcher.
-    """
-    bt = fa.baseType
-    if bt in ("ASMEB18.15.2A", "ASMEB18.15.2B"):
-        return makeEyeboltShoulder(self, fa)
-    elif bt == "DIN580":
-        return makeDIN580Eyebolt(self, fa)
-    elif bt == "ISO3266":
-        return makeISO3266Eyebolt(self, fa)
-    elif bt == "DIN582":
-        return makeDIN582Eyenut(self, fa)
-    elif bt in ("ASMEB18.15.1A", "ASMEB18.15.1B"):
-        return _makeEyeboltASME(self, fa)
-    else:
-        raise NotImplementedError(f"Unknown eyebolt-family type: {bt}")
-
-
-def _makeEyeboltASME(self, fa):
     """Create a Type 1 Plain Pattern (straight shank) eyebolt.
 
     Geometry (ASME B18.15 Table 1):

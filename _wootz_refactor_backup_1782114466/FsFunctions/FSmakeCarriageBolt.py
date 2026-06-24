@@ -43,23 +43,6 @@ sin22_5 = math.sin(math.radians(22.5))
 
 
 def makeCarriageBolt(self, fa):
-    """Carriage-bolt-family dispatcher.
-
-    screwTables points DIN603 / ASMEB18.5.2 / DIN605 / DIN608 at this function
-    so the FSmakeDIN605/608CarriageBolt shims could be removed. Each baseType
-    routes to its (unchanged) maker. AI overrides should edit the routed
-    geometry function, not this dispatcher.
-    """
-    bt = fa.baseType
-    if bt == "DIN608":
-        return makeDIN608CarriageBolt(self, fa)
-    elif bt == "DIN605":
-        return makeDIN605CarriageBolt(self, fa)
-    else:
-        return _makeCarriageBoltMain(self, fa)
-
-
-def _makeCarriageBoltMain(self, fa):
     """Creates a carriage bolt (round head square neck).
 
     Supported types:
